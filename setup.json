@@ -1,0 +1,33 @@
+{
+    "author": "Leonid Kahle", 
+    "author_email": "leonid.kahle@epfl.ch", 
+    "classifiers": [
+        "License :: OSI Approved :: MIT License", 
+        "Programming Language :: Python :: 2", 
+        "Programming Language :: Python :: 2.7", 
+        "Operating System :: OS Independent", 
+        "Topic :: Scientific/Engineering :: Physics", 
+        "Topic :: Scientific/Engineering :: Chemistry", 
+        "Topic :: Software Development :: Libraries :: Python Modules"
+    ], 
+    "description": "Package for Supercell Creation", 
+    "extras_require": {
+        "dev_precommit": [
+            "pre-commit"
+        ], 
+        "docs": [
+            "Sphinx", 
+            "docutils", 
+            "sphinx_rtd_theme"
+        ]
+    }, 
+    "install_requires": [
+        "pymatgen",
+        "spglib",
+        "numpy"
+    ],
+    "extras_requires":{},
+    "license": "MIT License", 
+    "name": "supercellor", 
+    "version": "0.1.0"
+}

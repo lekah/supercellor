@@ -1,0 +1,6 @@
+This package provides a code to create optimally cubic-like supercells for MD
+
+To install, run:
+
+pip install -e .
+

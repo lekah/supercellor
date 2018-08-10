@@ -1,0 +1,100 @@
+
+#(C) 2016 by FIZ Karlsruhe - Leibniz Institute for Information Infrastructure.  All rights reserved.
+data_421725-ICSD
+_database_code_ICSD 421725
+_audit_creation_date 2012-02-01
+_audit_update_record 2012-08-01
+_chemical_name_systematic 'Lithium cerium tetrakis(trioxophosphate)'
+_chemical_formula_structural 'Li Ce (P O3)4'
+_chemical_formula_sum 'Ce1 Li1 O12 P4'
+_chemical_name_structure_type LiYb(PO3)4
+_exptl_crystal_density_diffrn 3.31
+_cell_measurement_temperature 298.
+_publ_section_title 'Synthesis and crystal structure of Li Ce (P O4)3'
+loop_
+_citation_id
+_citation_journal_full
+_citation_year
+_citation_journal_volume
+_citation_page_first
+_citation_page_last
+_citation_journal_id_ASTM
+primary
+'X-ray structure analysis online, the Japan Society for analytical chemistry' 2011 27 13 14 XSAOBG
+loop_
+_publ_author_name
+'Mesfar, M.'
+'Abdelhedi, M.'
+'Hernandez, O.'
+'Dammak, M.'
+'Ferid, M.'
+_cell_length_a 16.520(7)
+_cell_length_b 7.088(4)
+_cell_length_c 9.831(4)
+_cell_angle_alpha 90
+_cell_angle_beta 126.290(2)
+_cell_angle_gamma 90
+_cell_volume 927.86
+_cell_formula_units_Z 4
+_symmetry_space_group_name_H-M 'C 1 2/c 1'
+_symmetry_Int_Tables_number 15
+_refine_ls_R_factor_all 0.0115
+loop_
+_symmetry_equiv_pos_site_id
+_symmetry_equiv_pos_as_xyz
+1 'x, -y, z+1/2'
+2 '-x, -y, -z'
+3 '-x, y, -z+1/2'
+4 'x, y, z'
+5 'x+1/2, -y+1/2, z+1/2'
+6 '-x+1/2, -y+1/2, -z'
+7 '-x+1/2, y+1/2, -z+1/2'
+8 'x+1/2, y+1/2, z'
+loop_
+_atom_type_symbol
+_atom_type_oxidation_number
+Ce3+ 3
+Li1+ 1
+P5+ 5
+O2- -2
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_symmetry_multiplicity
+_atom_site_Wyckoff_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_B_iso_or_equiv
+_atom_site_occupancy
+_atom_site_attached_hydrogens
+Ce1 Ce3+ 4 e 0.5 0.802002(14) 0.25 0.0067 1. 0
+Li1 Li1+ 4 e 0.5 0.2999(6) 0.25 0.0146 1. 0
+P1 P5+ 8 f 0.64985(2) 1.16158(4) 0.59674(4) 0.007 1. 0
+P2 P5+ 8 f 0.63907(2) 0.55888(4) 0.66519(4) 0.0067 1. 0
+O1 O2- 8 f 0.57569(7) 1.10243(13) 0.41741(11) 0.0116 1. 0
+O2 O2- 8 f 0.63084(8) 1.11532(14) 0.72279(13) 0.0126 1. 0
+O3 O2- 8 f 0.74336(6) 0.58953(14) 0.84545(11) 0.0109 1. 0
+O4 O2- 8 f 0.66154(8) 0.38456(13) 0.59043(12) 0.0116 1. 0
+O5 O2- 8 f 0.61486(7) 0.72114(12) 0.55133(11) 0.0122 1. 0
+O6 O2- 8 f 0.56600(6) 0.50642(13) 0.70195(12) 0.0105 1. 0
+loop_
+_atom_site_aniso_label
+_atom_site_aniso_type_symbol
+_atom_site_aniso_U_11
+_atom_site_aniso_U_22
+_atom_site_aniso_U_33
+_atom_site_aniso_U_12
+_atom_site_aniso_U_13
+_atom_site_aniso_U_23
+Ce1 Ce3+ 0.00709(3) 0.00634(3) 0.00674(3) 0. 0.00418(2) 0.
+Li1 Li1+ 0.0172(14) 0.0114(12) 0.0169(14) 0. 0.0110(12) 0.
+P1 P5+ 0.00605(10) 0.00736(11) 0.00664(10) 0.00039(7) 0.00326(9) -0.00059(7)
+P2 P5+ 0.00624(10) 0.00615(10) 0.00684(10) -0.00056(7) 0.00347(9) -0.00020(7)
+O1 O2- 0.0098(3) 0.0102(3) 0.0077(3) -0.0003(2) 0.0012(3) -0.0016(2)
+O2 O2- 0.0149(4) 0.0140(4) 0.0147(4) 0.0023(3) 0.0119(3) 0.0026(3)
+O3 O2- 0.0069(3) 0.0156(4) 0.0083(3) -0.0028(2) 0.0035(3) -0.0003(3)
+O4 O2- 0.0172(4) 0.0070(3) 0.0153(4) -0.0010(3) 0.0122(3) -0.0017(2)
+O5 O2- 0.0143(3) 0.0085(4) 0.0098(3) 0.0004(2) 0.0050(3) 0.0027(2)
+O6 O2- 0.0086(3) 0.0107(3) 0.0144(3) -0.0015(2) 0.0081(3) -0.0013(2)
+#End of TTdata_421725-ICSD
