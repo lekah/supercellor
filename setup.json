@@ -27,7 +27,7 @@
         "numpy"
     ],
     "extras_requires":{},
-    "license": "MIT License", 
-    "name": "supercellor", 
+    "license": "MIT License",
+    "name": "supercellor",
     "version": "0.1.0"
 }

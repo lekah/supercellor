@@ -15,8 +15,8 @@ if __name__ == '__main__':
     with open('setup.json', 'r') as info:
         kwargs = json_load(info)
     setup(
-        #~ include_package_data=True,
-        #~ packages=find_packages(),
+        include_package_data=True,
+        packages=find_packages(),
         package_data = {'': ['*.f90']},
         #~ ext_modules = [ext1, ext2],
         **kwargs
