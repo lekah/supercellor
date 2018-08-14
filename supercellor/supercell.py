@@ -81,9 +81,10 @@ def make_supercell(structure, min_image_distance, wrap=True, standardize=True,
     lattice_cellvecs = starting_structure._lattice.matrix
     # trial_vecs are all possible vectors sorted by the norm
     trial_vecs = get_trial_vecs(lattice_cellvecs, min_image_distance, verbosity=verbosity)
+    if verbosity:
+        print "I received {} trial vectors".format(len(trial_vecs))
     # I pass these trial vectors into the function to find the minimum volume:
-    scale_matrix, supercell_cellvecs = find_min_vol(trial_vecs, lattice_cellvecs, min_image_distance, 
-            verbosity=verbosity)
+    scale_matrix, supercell_cellvecs = find_min_vol(trial_vecs, lattice_cellvecs, min_image_distance, verbosity=verbosity)
 
     # Constructing the new lattice:
     new_lattice = Lattice(supercell_cellvecs)
@@ -220,6 +221,7 @@ def get_trial_vecs(cell, min_image_distance, verbosity=1):
         d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
         repetitions[index] = int(math.ceil(min_image_distance/d1))
     maxcell = np.array([rep*v for rep, v in zip(repetitions, cell)])
+    maxcell_coords = np.diag(repetitions)
     diagvol = np.abs(np.dot(np.cross(maxcell[0], maxcell[1]), maxcell[2]))
     if verbosity:
         print "Volume of diagonal supercell:", diagvol
@@ -239,37 +241,67 @@ def get_trial_vecs(cell, min_image_distance, verbosity=1):
                 if min_image_distance <= veclen <= maxradius:
                     trials.append((veclen, ia, ib, ic, vector))
     trials = sorted(trials)
-    return trials
+    return trials #, maxcell_coords, diagvol
 
 def find_min_vol(trial_vecs, cell, min_image_distance, verbosity=1):
+    #~ if diagvol:
+        #~ min_volume = diagvol
+    #~ else:
     min_volume = np.inf
+    #~ if maxcell_coords is not None:
+        #~ chosen_coords = maxcell_coords
     max_min_per_image_distance = 0
     max_radius = trial_vecs[-1][0]
     for i1, (veclen1, ia1, ib1, ic1, vector1) in enumerate(trial_vecs, start=0):
-        
+        if verbosity > 1:
+            print ia1, ib1, ic1, vector1
         if veclen1 > max_radius:
             break
         for i2, (veclen2, ia2, ib2, ic2, vector2) in enumerate(trial_vecs[i1+1:], start=i1+1):
+            if verbosity > 1:
+                print '  -- ', ia2, ib2, ic2, vector2
             if veclen2 > max_radius:
+                if verbosity > 1:
+                    print '   -> Max radius surpassed, break'
                 break
+            # Checking the dot product, so that I continue if the vectors have an angle < 60
             if np.abs(np.dot(vector1, vector2)) / (veclen1*veclen2) >= 0.5:
+                if verbosity > 1:
+                    print '   -> Angle < 60, continue'
                 continue
             for i3, (veclen3, ia3, ib3, ic3, vector3) in enumerate(trial_vecs[i2+1:], start=i2+1):
+                if verbosity > 1:
+                    print '    -- ', ia3, ib3, ic3, vector3
                 if veclen3 > max_radius:
+                    if verbosity > 1:
+                        print '     -> Max radius surpassed, break'
                     break
                 if np.abs(np.dot(vector2, vector3)) / (veclen2*veclen3) >= 0.5:
+                    if verbosity > 1:
+                        print '     -> Angle < 60, continue'
                     continue
                 elif np.abs(np.dot(vector1, vector3)) / (veclen1*veclen3) >= 0.5:
+                    if verbosity > 1:
+                        print '     -> Angle < 60, continue'
                     continue
                 # checking intersections of each plane
-                d1 = np.abs(np.dot(np.cross(vector2/veclen2, vector3/veclen3), vector1))
+                cross23 = np.cross(vector2, vector3)
+                d1 = np.abs(np.dot(cross23/np.linalg.norm(cross23), vector1))
                 if d1 < min_image_distance:
+                    if verbosity > 1:
+                        print '     -> d1 {} < min_image_distance, continue'.format(d1)
                     continue
-                d2 = np.abs(np.dot(np.cross(vector1/veclen1, vector3/veclen3), vector2)) 
+                cross13 = np.cross(vector1, vector3)
+                d2 = np.abs(np.dot(cross13/np.linalg.norm(cross13), vector2))
                 if d2 < min_image_distance:
+                    if verbosity > 1:
+                        print '     -> d2 {} < min_image_distance, continue'.format(d2)
                     continue
-                d3 = np.abs(np.dot(np.cross(vector1/veclen1, vector2/veclen2), vector3))
+                cross12 = np.cross(vector1, vector2)
+                d3 = np.abs(np.dot(cross12/np.linalg.norm(cross12), vector3))
                 if d3 < min_image_distance:
+                    if verbosity > 1:
+                        print '     -> d3 {} < min_image_distance, continue'.format(d3)
                     continue
                 volume = np.abs(np.dot(np.cross(vector1,vector2), vector3))
                 min_per_image_distance = min((d1,d2, d3))
