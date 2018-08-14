@@ -55,6 +55,28 @@ FUNCTION cross(a, b)
   cross(3) = a(1) * b(2) - a(2) * b(1)
 END FUNCTION cross
 
+FUNCTION diag_vol(cell, radius)
+  !
+  ! Calculates the diagonal cell and gives the number of repetitions necessary
+  !
+  IMPLICIT NONE
+  INTEGER  :: diag_vol
+  REAL*8, DIMENSION(3,3), INTENT(IN) :: cell
+  REAL*8, INTENT(IN) :: radius
+
+  REAL*8, DIMENSION(3) :: cross_vector
+
+  INTEGER :: i
+  diag_vol = 1
+  DO i=1, 3
+    cross_vector = cross(cell(MOD(i,3)+1,1:3), cell(MOD(i+1,3)+1,1:3))
+    cross_vector(:) = cross_vector(:) / SQRT(SUM(cross_vector(:)*cross_vector(:)))
+    diag_vol = diag_vol * ceiling(radius / abs(sum(cross_vector(:)*cell(i,1:3))))
+  ENDDO
+
+END FUNCTION diag_vol
+
+
 
 
  SUBROUTINE gauss_reduce(a,b)
@@ -285,9 +307,10 @@ iter: DO
  REAL(dp),PARAMETER :: tol=1.d-8
  
  INTEGER :: i,j,k,ierr,s11,s12,s13,s22,s23,s33, abs_norm, best_abs_norm, &
- &quotient,min_super_size,super_size,hnf(3,3),best_supercell(3,3) 
+ &quotient,min_super_size, max_super_size, super_size,hnf(3,3),best_supercell(3,3) 
  REAL(dp) :: prim_latt_vecs(3,3), rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
- real(dp) :: radius, cell_volume, min_image_distance, best_min_image_distance, min_image_distance2
+ real(dp) :: radius, cell_volume, min_image_distance, abs_best_min_image_distance, &
+        min_image_distance_this_hnf, min_image_distance_this_dir
  LOGICAL :: found 
  
 ! Get the primitive cell lattice vectors and the target radius
@@ -314,27 +337,29 @@ iter: DO
  ! The minimal value for the supercell size is set by requiring that the volume
  ! of the supercell is at least equal to a cube that contains the target sphere
  min_super_size = int(radius**3/cell_volume)
-
+ max_super_size = diag_vol(prim_latt_vecs, radius)
  write(*,*) "Unit cell volume: ", cell_volume
  ! write(*,*) "Minimal cubic volume: ", (2*radius)**3
  write(*,*) "Minimal supercell size: ", min_super_size
+ write(*,*) "Maximal supercell size: ", max_super_size
  
  ! Initialize to zero the best minimum image distance
- best_min_image_distance = 0.0d0
+ abs_best_min_image_distance = 0.0d0
+ 
  
  found = .false.
  
- do super_size = min_super_size,min_super_size + 2
-   do s11=1,super_size
+ volume_loop: do super_size = min_super_size, max_super_size
+   s11_loop: do s11=1,super_size
     if ( .not. mod(super_size,s11) == 0 ) cycle
     quotient=super_size/s11
-    do s22=1,quotient
+    s22_loop: do s22=1,quotient
      if(.not.mod(quotient,s22)==0) cycle
      s33=quotient/s22
      ! IF (s33>1) CYCLE ! uncomment this line for 2D
-     do s12=0,s22-1
-      do s13=0,s33-1
-       do s23=0,s33-1
+     s12_loop: do s12=0,s22-1
+      s13_loop: do s13=0,s33-1
+       s23_loop: do s23=0,s33-1
         ! construct the supercell matrix
         hnf(1:3,1:3)=0
         hnf(1,1)=s11
@@ -377,47 +402,59 @@ iter: DO
         ! an orthorhombic system. One has to take the angle into account!
         min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
         print*, 'Min image distance:', min_image_distance
+        min_image_distance_this_hnf = 0.0d0
         DO k=1, 3
             cross_vector = cross(temp_latt_vecs(MOD(k,3)+1,1:3), temp_latt_vecs(MOD(k+1,3)+1,1:3))
             cross_vector(:) = cross_vector(:) / SQRT(SUM(cross_vector(:)*cross_vector(:)))
-            min_image_distance2 = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
-            print*, 'Min image distance2:', min_image_distance2
+            min_image_distance_this_dir = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
+            print*, 'Min image distance2:', min_image_distance_this_dir
+
+            IF ( min_image_distance < radius ) THEN
+                print*, 'found too small mim image distance'
+                cycle s23_loop
+            ENDIF
+            ! FOR this particular HNF, I calculate the minimum image distance
+            IF ( min_image_distance_this_hnf < min_image_distance_this_dir ) THEN
+                min_image_distance_this_hnf = min_image_distance_this_dir
+            ENDIF
         END DO
+        ! If I got here, it means I did not break minimum image distance criterion
+        ! and that I have found a valid supercell
+        found = .true.
         
-        if (min_image_distance > best_min_image_distance) then
-           best_min_image_distance = min_image_distance
+        if (min_image_distance_this_hnf > abs_best_min_image_distance) then
+           abs_best_min_image_distance = min_image_distance_this_hnf
            best_supercell = hnf
-           best_abs_norm = 0
-           do j = 1, 3
-              do k = 1, 3
-                 best_abs_norm = best_abs_norm + abs(best_supercell(k,j))
-              end do
-           end do
-           write(*,*) 'Minimum image distance:', min_image_distance
-        elseif (abs(min_image_distance-best_min_image_distance)<tol) then
-           abs_norm = 0 
-           do j = 1, 3
-              do k = 1, 3
-                 abs_norm = abs_norm + abs(hnf(k,j))
-              end do
-           end do
-           if (abs_norm < best_abs_norm) then
-               best_supercell = hnf
-               best_abs_norm = abs_norm
-           end if 
+           !best_abs_norm = 0
+           !do j = 1, 3
+           !   do k = 1, 3
+           !      best_abs_norm = best_abs_norm + abs(best_supercell(k,j))
+           !   end do
+           !end do
+           write(*,*) 'New best minimum image distance:', abs_best_min_image_distance
+!~         elseif (abs(min_image_distance-best_min_image_distance)<tol) then
+!~            abs_norm = 0 
+!~            do j = 1, 3
+!~               do k = 1, 3
+!~                  abs_norm = abs_norm + abs(hnf(k,j))
+!~               end do
+!~            end do
+!~            if (abs_norm < best_abs_norm) then
+!~                best_supercell = hnf
+!~                best_abs_norm = abs_norm
+!~            end if 
         end if
         
-       enddo ! s23
-      enddo ! s13
-     enddo ! s12
-    enddo ! s22
-   enddo ! s11
-   
-   if (best_min_image_distance .ge. radius) then
-      found = .true.
-      exit
-   end if
- enddo ! super_size
+       enddo s23_loop
+      enddo s13_loop
+     enddo s12_loop
+    enddo s22_loop
+   enddo s11_loop
+   if ( found ) THEN 
+    print*, "Exiting, I found a good volume", super_size
+    exit volume_loop
+   endif
+ enddo volume_loop
 
 
  if(.not.found)then
@@ -425,7 +462,7 @@ iter: DO
   stop
  endif 
  
- write(*,*) "Best minimum image distance: ", best_min_image_distance
+ write(*,*) "Best minimum image distance: ", abs_best_min_image_distance
  write(*,*) "Optimal supercell: "
  do i = 1, 3
     write(*,*) best_supercell(i,1:3)
