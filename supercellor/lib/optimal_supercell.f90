@@ -39,36 +39,23 @@
   a=b
   b=temp
  enddo
-
  gcd=b
-
  END FUNCTION gcd
 
 
- CHARACTER(12) FUNCTION i2s(n)
-!------------------------------------------------------------------------------!
-! Convert integers to left justified strings that can be printed in the middle !
-! of a sentence without introducing large amounts of white space.              !
-!------------------------------------------------------------------------------!
- IMPLICIT NONE
- INTEGER,INTENT(in) :: n
- INTEGER :: i,j
- INTEGER,PARAMETER :: ichar0=ICHAR('0')
+FUNCTION cross(a, b)
+  !
+  ! Calculates the cross product of 2 3d-vectors
+  !
+  IMPLICIT NONE
+  REAL*8, DIMENSION(3) :: cross
+  REAL*8, DIMENSION(3), INTENT(IN) :: a, b
+  cross(1) = a(2) * b(3) - a(3) * b(2)
+  cross(2) = a(3) * b(1) - a(1) * b(3)
+  cross(3) = a(1) * b(2) - a(2) * b(1)
+END FUNCTION cross
 
- i2s=''
- i=abs(n)
- do j=len(i2s),1,-1
-  i2s(j:j)=achar(ichar0+mod(i,10))
-  i=i/10
-  if(i==0)exit
- enddo ! j
- if(n<0)then
-  i2s='-'//adjustl(i2s)
- else
-  i2s=adjustl(i2s)
- endif ! n<0
 
- END FUNCTION i2s
 
  SUBROUTINE gauss_reduce(a,b)
  IMPLICIT NONE
@@ -299,8 +286,8 @@ iter: DO
  
  INTEGER :: i,j,k,ierr,s11,s12,s13,s22,s23,s33, abs_norm, best_abs_norm, &
  &quotient,min_super_size,super_size,hnf(3,3),best_supercell(3,3) 
- REAL(dp) :: prim_latt_vecs(3,3), rec_latt_vecs(3,3), temp_latt_vecs(3,3)
- real(dp) :: radius, cell_volume, min_image_distance, best_min_image_distance
+ REAL(dp) :: prim_latt_vecs(3,3), rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
+ real(dp) :: radius, cell_volume, min_image_distance, best_min_image_distance, min_image_distance2
  LOGICAL :: found 
  
 ! Get the primitive cell lattice vectors and the target radius
@@ -326,10 +313,10 @@ iter: DO
  
  ! The minimal value for the supercell size is set by requiring that the volume
  ! of the supercell is at least equal to a cube that contains the target sphere
- min_super_size = int((2 * radius)**3/cell_volume) + 1
+ min_super_size = int(radius**3/cell_volume)
 
  write(*,*) "Unit cell volume: ", cell_volume
- write(*,*) "Minimal cubic volume: ", (2*radius)**3
+ ! write(*,*) "Minimal cubic volume: ", (2*radius)**3
  write(*,*) "Minimal supercell size: ", min_super_size
  
  ! Initialize to zero the best minimum image distance
@@ -337,29 +324,45 @@ iter: DO
  
  found = .false.
  
- do super_size = min_super_size,min_super_size + 10
+ do super_size = min_super_size,min_super_size + 2
    do s11=1,super_size
     if ( .not. mod(super_size,s11) == 0 ) cycle
     quotient=super_size/s11
     do s22=1,quotient
-     if(.not.mod(quotient,s22)==0)cycle
+     if(.not.mod(quotient,s22)==0) cycle
      s33=quotient/s22
-     IF (s33>1) CYCLE ! uncomment this line for 2D
+     ! IF (s33>1) CYCLE ! uncomment this line for 2D
      do s12=0,s22-1
       do s13=0,s33-1
        do s23=0,s33-1
         ! construct the supercell matrix
         hnf(1:3,1:3)=0
-        hnf(1,1)=s11 ; hnf(1,2)=s12 ; hnf(1,3)=s13
-        hnf(2,2)=s22 ; hnf(2,3)=s23
+        hnf(1,1)=s11
+        hnf(1,2)=s12
+        hnf(1,3)=s13
+        hnf(2,2)=s22
+        hnf(2,3)=s23
         hnf(3,3)=s33
         do k=1,3
           do j=1,3
            temp_latt_vecs(k,j)=sum(dble(hnf(k,1:3))*prim_latt_vecs(1:3,j))
           enddo ! j
         enddo ! k
-
+        print*, 'HNF:'
+        do k=1,3
+            print*, hnf(k, :)
+        end do
+        print*, 'temp latt:'
+        do k=1,3
+            print*, temp_latt_vecs(k, :)
+        end do
+        
         call reduce_vecs(temp_latt_vecs) ! comment this line for 2D
+        print*, 'reduced:'
+        do k=1,3
+            print*, temp_latt_vecs(k, :)
+        end do
+        
         !call gauss_reduce(temp_latt_vecs(1,1:3),temp_latt_vecs(2,1:3)) ! uncomment this line for 2D
         
         do k=1,3
@@ -370,7 +373,16 @@ iter: DO
         
         ! After the reduction, the minimum image distance is simply
         ! the length of the first lattice vector
+        ! LK: No, I disagree there, this is only the minimum image distance for 
+        ! an orthorhombic system. One has to take the angle into account!
         min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
+        print*, 'Min image distance:', min_image_distance
+        DO k=1, 3
+            cross_vector = cross(temp_latt_vecs(MOD(k,3)+1,1:3), temp_latt_vecs(MOD(k+1,3)+1,1:3))
+            cross_vector(:) = cross_vector(:) / SQRT(SUM(cross_vector(:)*cross_vector(:)))
+            min_image_distance2 = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
+            print*, 'Min image distance2:', min_image_distance2
+        END DO
         
         if (min_image_distance > best_min_image_distance) then
            best_min_image_distance = min_image_distance
@@ -381,8 +393,7 @@ iter: DO
                  best_abs_norm = best_abs_norm + abs(best_supercell(k,j))
               end do
            end do
-           write(*,*) min_image_distance
-           write(*,'(9I)') hnf   
+           write(*,*) 'Minimum image distance:', min_image_distance
         elseif (abs(min_image_distance-best_min_image_distance)<tol) then
            abs_norm = 0 
            do j = 1, 3
@@ -393,7 +404,6 @@ iter: DO
            if (abs_norm < best_abs_norm) then
                best_supercell = hnf
                best_abs_norm = abs_norm
-               write(*,'(9I)') hnf 
            end if 
         end if
         
@@ -403,7 +413,7 @@ iter: DO
     enddo ! s22
    enddo ! s11
    
-   if (best_min_image_distance .ge. (2.0d0*radius)) then
+   if (best_min_image_distance .ge. radius) then
       found = .true.
       exit
    end if
