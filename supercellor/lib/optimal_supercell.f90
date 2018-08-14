@@ -201,71 +201,6 @@ iter: DO
  END FUNCTION determinant33
 
 
- SUBROUTINE supercells_generator(num_pcells,num_hnf,hnf)
-!------------------------------------------------------------------------------!
-! Generate all unique supercells that contain a given number of primitive unit !
-! cells. See 'Hart and Forcade, Phys. Rev. B 77, 224115 (2008)' for details of !
-! the algorithm.                                                               !
-!------------------------------------------------------------------------------!
- IMPLICIT NONE
- INTEGER,INTENT(in) :: num_pcells
- INTEGER,INTENT(out) :: num_hnf
- INTEGER,POINTER :: hnf(:,:,:)
- INTEGER :: a,b,c,d,e,f,ialloc,count_hnf,quotient
-
- count_hnf=0
-
- do a=1,num_pcells 
-  if(.not.mod(num_pcells,a)==0)cycle
-  quotient=num_pcells/a
-  do c=1,quotient  
-   if(.not.mod(quotient,c)==0)cycle
-   f=quotient/c
-   count_hnf=count_hnf+c*f**2
-  enddo ! c
- enddo ! a
-
- num_hnf=count_hnf
- count_hnf=0
-
- allocate(hnf(3,3,num_hnf),stat=ialloc)
- if(ialloc/=0)then
-  write(*,*)'Problem allocating hnf array in supercells_generator.'
-  stop
- endif
-
- hnf(1:3,1:3,1:num_hnf)=0
-
- do a=1,num_pcells 
-  if(.not.mod(num_pcells,a)==0)cycle
-  quotient=num_pcells/a
-  do c=1,quotient  
-   if(.not.mod(quotient,c)==0)cycle
-   f=quotient/c
-   do b=0,c-1
-    do d=0,f-1
-     do e=0,f-1
-      count_hnf=count_hnf+1
-      hnf(1,1,count_hnf)=a
-      hnf(1,2,count_hnf)=b
-      hnf(2,2,count_hnf)=c
-      hnf(1,3,count_hnf)=d
-      hnf(2,3,count_hnf)=e
-      hnf(3,3,count_hnf)=f
-     enddo ! e
-    enddo ! d
-   enddo ! b
-  enddo ! c
- enddo ! a
-
- if(count_hnf/=num_hnf)then
-  write(*,*)'Did not generate all HNF matrices.'
-  stop
- endif 
- 
- END SUBROUTINE supercells_generator
-
-
 
 
  SUBROUTINE inv33(v,inv)
@@ -298,36 +233,26 @@ iter: DO
  END MODULE utils
 
 
- PROGRAM optimal_supercell
+ SUBROUTINE optimal_supercell_hnf(prim_latt_vecs, radius, scaling_matrix)
 !---------------------!
 !  OPTIMAL_SUPERCELL  !
 !---------------------!
  USE utils
  IMPLICIT NONE
+ REAL(dp), INTENT(IN), DIMENSION(3,3) :: prim_latt_vecs
+ INTEGER, INTENT(INOUT), DIMENSION(3,3) :: scaling_matrix
+ REAL(dp), INTENT(IN) :: radius
+
  REAL(dp),PARAMETER :: tol=1.d-8
- 
- INTEGER :: i,j,k,ierr,s11,s12,s13,s22,s23,s33, abs_norm, best_abs_norm, &
+ INTEGER :: i,j,k,s11,s12,s13,s22,s23,s33, abs_norm, best_abs_norm, &
  &quotient,min_super_size, max_super_size, super_size,hnf(3,3),best_supercell(3,3) 
- REAL(dp) :: prim_latt_vecs(3,3), rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
- real(dp) :: radius, cell_volume, min_image_distance, abs_best_min_image_distance, &
+ REAL(dp) :: rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
+ real(dp) :: cell_volume, min_image_distance, abs_best_min_image_distance, &
         min_image_distance_this_hnf, min_image_distance_this_dir
  LOGICAL :: found 
  
 ! Get the primitive cell lattice vectors and the target radius
- open(unit=11,file='cell_and_radius.dat',status='old',iostat=ierr)
- if(ierr/=0)then
-  write(*,*)'Problem opening cell_and_radius.dat file.'
-  stop
- endif ! ierr
- read(11,*,iostat=ierr)prim_latt_vecs(1,1:3)
- if(ierr==0)read(11,*,iostat=ierr)prim_latt_vecs(2,1:3)
- if(ierr==0)read(11,*,iostat=ierr)prim_latt_vecs(3,1:3)
- if(ierr==0)read(11,*,iostat=ierr)radius
- if(ierr/=0)then
-  write(*,*)'Problem reading cell_and_radius.dat file.'
-  stop
- endif ! ierr
- close(11)
+
  
  call inv33(prim_latt_vecs,rec_latt_vecs)
  rec_latt_vecs=transpose(rec_latt_vecs)
@@ -425,6 +350,7 @@ iter: DO
         if (min_image_distance_this_hnf > abs_best_min_image_distance) then
            abs_best_min_image_distance = min_image_distance_this_hnf
            best_supercell = hnf
+           scaling_matrix = hnf
            !best_abs_norm = 0
            !do j = 1, 3
            !   do k = 1, 3
@@ -456,26 +382,50 @@ iter: DO
    endif
  enddo volume_loop
 
-
  if(.not.found)then
   write(*,*)'Unable to find an optimal supercell.'
   stop
  endif 
- 
  write(*,*) "Best minimum image distance: ", abs_best_min_image_distance
  write(*,*) "Optimal supercell: "
  do i = 1, 3
     write(*,*) best_supercell(i,1:3)
  end do
- 
+ END SUBROUTINE optimal_supercell_hnf
+
+
+PROGRAM optimal_supercell
+ USE utils
+ implicit none
+ INTEGER ierr
+ REAL(dp), dimension(3,3) :: cell
+ INTEGER, dimension(3,3) ::  scaling_matrix
+ REAL(dp) :: radius
+ INTEGER :: k
+ open(unit=11, file='cell_and_radius.dat', status='old', iostat=ierr)
+ if(ierr/=0)then
+  write(*,*)'Problem opening cell_and_radius.dat file.'
+  stop
+ endif ! ierr
+ read(11,*,iostat=ierr) cell(1,1:3)
+ if(ierr==0) read(11,*,iostat=ierr) cell(2,1:3)
+ if(ierr==0) read(11,*,iostat=ierr) cell(3,1:3)
+ if(ierr==0) read(11,*,iostat=ierr) radius
+ if(ierr/=0) then
+  write(*,*)'Problem reading cell_and_radius.dat file.'
+  stop
+ endif ! ierr
+ close(11)
+ call optimal_supercell_hnf(cell, radius, scaling_matrix)
  open(unit=12,file='supercell.dat',status='replace',iostat=ierr)
  if(ierr/=0)then
     write(*,*)'Problem opening supercell.dat file.'
     stop
- endif ! ierr
- write(12,*) best_supercell(1,1:3)
- write(12,*) best_supercell(2,1:3)
- write(12,*) best_supercell(3,1:3)
- close(12)
+ endif ! ierr    
 
- END PROGRAM optimal_supercell
+ do k=1, 3
+    write(12,*) scaling_matrix(k,1:3)
+    !print*, scaling_matrix(k)
+ end do
+ close(12)
+END PROGRAM optimal_supercell

@@ -1,2 +1,4 @@
 supercellor.egg-info
 *.pyc
+build
+*.so
