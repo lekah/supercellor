@@ -1,6 +1,10 @@
-This package provides a code to create optimally cubic-like supercells for MD
+This package provides a code to create optimally cubic-like supercells for MD/KMC simulations etc.
 
-To install, run:
+To install in editable mode (see https://pip.pypa.io/en/stable/reference/pip_install/#editable-installs), run:
 
 pip install -e .
+
+To install non-editable mode, run:
+
+pip install .
 
