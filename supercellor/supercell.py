@@ -13,7 +13,7 @@ except ImportError:
 from pymatgen.core.sites import Site, PeriodicSite
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from spglib import standardize_cell
-
+from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
 
 def rotate(R, lattice_vecs, frac_coords):
     new_lattice_vecs = np.dot(lattice_vecs.T, R).T
@@ -28,13 +28,14 @@ def get_angles(cell_matrix):
     return k_a, k_b, k_c
 
 
-def make_supercell(structure, min_image_distance, wrap=True, standardize=True,
+def make_supercell(structure, min_image_distance, method='hnf', wrap=True, standardize=True,
         do_niggli_first=True, verbosity=1):
     """
     Creates from a given structure a supercell based on the required minimal dimension
     :param structure: The pymatgen structure to create the supercell for
     :param float min_image_distance: The minimum image distance as a float,
         The cell created will not have any periodic image below this distance
+    :param str method: Can either be "hnf" or "bfv"
     :param bool wrap: Wrap the atoms into the created cell after replication
     :param bool standardize: Standardize the created cell.
         This is done based on the rules in Hinuma etal, http://arxiv.org/abs/1506.01455
@@ -78,14 +79,17 @@ def make_supercell(structure, min_image_distance, wrap=True, standardize=True,
             print i, np.linalg.norm(v)
     
     # the lattice of the niggle reduced structure:
-    lattice_cellvecs = starting_structure._lattice.matrix
+    lattice_cellvecs = np.array(starting_structure._lattice.matrix, dtype=np.float64)
     # trial_vecs are all possible vectors sorted by the norm
-    trial_vecs = get_trial_vecs(lattice_cellvecs, min_image_distance, verbosity=verbosity)
-    if verbosity:
-        print "I received {} trial vectors".format(len(trial_vecs))
-    # I pass these trial vectors into the function to find the minimum volume:
-    scale_matrix, supercell_cellvecs = find_min_vol(trial_vecs, lattice_cellvecs, min_image_distance, verbosity=verbosity)
-
+    if method == 'bfv':
+        trial_vecs = get_trial_vecs(lattice_cellvecs, min_image_distance, verbosity=verbosity)
+        if verbosity:
+            print "I received {} trial vectors".format(len(trial_vecs))
+        # I pass these trial vectors into the function to find the minimum volume:
+        scale_matrix, supercell_cellvecs = find_min_vol(trial_vecs, lattice_cellvecs, min_image_distance, verbosity=verbosity)
+    elif method == 'hnf':
+        lattice_cellvecs = np.array(lattice_cellvecs)
+        scale_matrix, supercell_cellvecs = optimal_supercell_hnf(lattice_cellvecs, min_image_distance, verbosity)
     # Constructing the new lattice:
     new_lattice = Lattice(supercell_cellvecs)
     # I create f_lat, which are the fractional lattice points of the niggle_reduced:
@@ -244,12 +248,8 @@ def get_trial_vecs(cell, min_image_distance, verbosity=1):
     return trials #, maxcell_coords, diagvol
 
 def find_min_vol(trial_vecs, cell, min_image_distance, verbosity=1):
-    #~ if diagvol:
-        #~ min_volume = diagvol
-    #~ else:
+
     min_volume = np.inf
-    #~ if maxcell_coords is not None:
-        #~ chosen_coords = maxcell_coords
     max_min_per_image_distance = 0
     max_radius = trial_vecs[-1][0]
     for i1, (veclen1, ia1, ib1, ic1, vector1) in enumerate(trial_vecs, start=0):

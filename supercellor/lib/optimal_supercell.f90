@@ -1,10 +1,16 @@
- MODULE constants
+! MODULE constants
 !--------------------------------------------------------------!
 ! Numerical constants and constants for variable declarations. !
 !--------------------------------------------------------------!
- IMPLICIT NONE
- INTEGER,PARAMETER :: dp=kind(1.d0)
- END MODULE constants
+! IMPLICIT NONE
+! integer, parameter :: sp = selected_real_kind(6,37) ! single precision
+! INTEGER,PARAMETER :: dp=selected_real_kind(15,307) ! double precision
+!
+! real(sp) :: r_sp = 1.0
+! REAL(dp) :: r_dp = 1.0_dp
+! For now commenting out constants module, this just doesn't properly work with f2py,
+! have to declare REAL*8 everywhere
+! END MODULE constants
 
 
  MODULE utils
@@ -12,6 +18,7 @@
 ! Miscellaneous utilities. !
 !--------------------------!
  USE constants
+ USE, intrinsic :: iso_fortran_env
  IMPLICIT NONE
  
  CONTAINS
@@ -81,8 +88,8 @@ END FUNCTION diag_vol
 
  SUBROUTINE gauss_reduce(a,b)
  IMPLICIT NONE
- REAL(dp) :: a(3), b(3), temp_vec(3), a_len, b_len, len
- REAL(dp),PARAMETER :: tol_zero=1.d-8
+ REAL*8 :: a(3), b(3), temp_vec(3), a_len, b_len, len
+ REAL*8,PARAMETER :: tol_zero=1.d-8
  INTEGER :: r
  
  iter: DO
@@ -124,10 +131,10 @@ END FUNCTION diag_vol
  ! From http://www.csie.nuk.edu.tw/~cychen/Lattices/A%203-Dimensional%20Lattice%20Reduction%20Algorithm.pdf
   
  IMPLICIT NONE
- REAL(dp),INTENT(inout) :: vecs(3,3)
- REAL(dp),PARAMETER :: tol_zero=1.d-8
+ REAL*8,INTENT(inout) :: vecs(3,3)
+ REAL*8,PARAMETER :: tol_zero=1.d-8
  INTEGER :: longest, i, j, x1, x2 
- REAL(dp) :: temp_vec(3), best_vec(3), maxlen, minlen, nlen, len2(3), &
+ REAL*8 :: temp_vec(3), best_vec(3), maxlen, minlen, nlen, len2(3), &
  &prod12,prod13,prod23, denom, y1, y2
 
 iter: DO
@@ -191,8 +198,8 @@ iter: DO
 ! Given a 3x3 matrix A, this function returns det(A). !
 !-----------------------------------------------------!
  IMPLICIT NONE
- REAL(dp),INTENT(in) :: A(3,3)
- REAL(dp) :: determinant33
+ REAL*8,INTENT(in) :: A(3,3)
+ REAL*8 :: determinant33
 
  determinant33=A(1,1)*(A(2,2)*A(3,3)-A(3,2)*A(2,3))&
   &+A(1,2)*(A(3,1)*A(2,3)-A(2,1)*A(3,3))&
@@ -200,6 +207,16 @@ iter: DO
 
  END FUNCTION determinant33
 
+ FUNCTION determinant33_int(A)
+    IMPLICIT NONE
+    INTEGER,  INTENT(in) :: A(3,3)
+    INTEGER :: determinant33_int
+
+    determinant33_int = A(1,1)*(A(2,2)*A(3,3)-A(3,2)*A(2,3)) &
+        +A(1,2)*(A(3,1)*A(2,3)-A(2,1)*A(3,3)) &
+        +A(1,3)*(A(2,1)*A(3,2)-A(3,1)*A(2,2))
+
+ END FUNCTION determinant33_int
 
 
 
@@ -208,10 +225,9 @@ iter: DO
 ! Inverts 3x3 matrices. !
 !-----------------------!
  IMPLICIT NONE
- REAL(dp),INTENT(in) :: v(3,3)
- REAL(dp),INTENT(out) :: inv(3,3)
- REAL(dp) :: d
-
+ REAL*8,INTENT(in) :: v(3,3)
+ REAL*8,INTENT(out) :: inv(3,3)
+ REAL*8 :: d
  d=determinant33(v)
  if(d==0.d0)then
   write(*,*)'Trying to invert a singular determinant.'
@@ -233,24 +249,30 @@ iter: DO
  END MODULE utils
 
 
- SUBROUTINE optimal_supercell_hnf(prim_latt_vecs, radius, scaling_matrix)
+ SUBROUTINE optimal_supercell_hnf(prim_latt_vecs, radius, verbosity, scaling_matrix, supercell_latt_vecs)
 !---------------------!
 !  OPTIMAL_SUPERCELL  !
 !---------------------!
  USE utils
+ use, intrinsic :: iso_fortran_env
  IMPLICIT NONE
- REAL(dp), INTENT(IN), DIMENSION(3,3) :: prim_latt_vecs
- INTEGER, INTENT(INOUT), DIMENSION(3,3) :: scaling_matrix
- REAL(dp), INTENT(IN) :: radius
-
- REAL(dp),PARAMETER :: tol=1.d-8
- INTEGER :: i,j,k,s11,s12,s13,s22,s23,s33, abs_norm, best_abs_norm, &
- &quotient,min_super_size, max_super_size, super_size,hnf(3,3),best_supercell(3,3) 
- REAL(dp) :: rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
- real(dp) :: cell_volume, min_image_distance, abs_best_min_image_distance, &
-        min_image_distance_this_hnf, min_image_distance_this_dir
- LOGICAL :: found 
+ REAL*8, INTENT(IN), DIMENSION(3,3) :: prim_latt_vecs
  
+ INTEGER, INTENT(OUT), DIMENSION(3,3) :: scaling_matrix
+ REAL*8, INTENT(OUT), DIMENSION(3,3) :: supercell_latt_vecs
+ REAL*8, INTENT(IN) :: radius
+ INTEGER, INTENT(IN) :: verbosity ! verbosity settings 0-3
+
+ REAL*8,PARAMETER :: tol=1.d-8
+ INTEGER :: i,j,k,s11,s12,s13,s22,s23,s33, & !abs_norm, best_abs_norm, &
+ &quotient,min_super_size, max_super_size, super_size,hnf(3,3) !,best_supercell(3,3) 
+ REAL*8 :: rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
+ REAL*8 :: cell_volume, abs_best_min_image_distance, & !min_image_distance, &
+        min_image_distance_this_hnf, minimum_image_distances(3)
+ LOGICAL :: found 
+ print*, radius
+ print*, scaling_matrix
+ print*, prim_latt_vecs
 ! Get the primitive cell lattice vectors and the target radius
 
  
@@ -263,14 +285,14 @@ iter: DO
  ! of the supercell is at least equal to a cube that contains the target sphere
  min_super_size = int(radius**3/cell_volume)
  max_super_size = diag_vol(prim_latt_vecs, radius)
- write(*,*) "Unit cell volume: ", cell_volume
- ! write(*,*) "Minimal cubic volume: ", (2*radius)**3
- write(*,*) "Minimal supercell size: ", min_super_size
- write(*,*) "Maximal supercell size: ", max_super_size
- 
+ IF ( verbosity > 0 ) THEN
+    write(*,*) "Unit cell volume: ", cell_volume
+    write(*,*) "Minimal supercell size: ", min_super_size
+    write(*,*) "Maximal supercell size: ", max_super_size
+ ENDIF
+
  ! Initialize to zero the best minimum image distance
  abs_best_min_image_distance = 0.0d0
- 
  
  found = .false.
  
@@ -298,66 +320,72 @@ iter: DO
            temp_latt_vecs(k,j)=sum(dble(hnf(k,1:3))*prim_latt_vecs(1:3,j))
           enddo ! j
         enddo ! k
-        print*, 'HNF:'
-        do k=1,3
-            print*, hnf(k, :)
-        end do
-        print*, 'temp latt:'
-        do k=1,3
-            print*, temp_latt_vecs(k, :)
-        end do
+        IF ( verbosity > 1 ) THEN
+            print*, 'HNF:'
+            do k=1,3
+                print*, hnf(k, :)
+            end do
+            print*, 'temp latt:'
+            do k=1,3
+                print*, temp_latt_vecs(k, :)
+            end do
+        ENDIF
         
         call reduce_vecs(temp_latt_vecs) ! comment this line for 2D
-        print*, 'reduced:'
-        do k=1,3
-            print*, temp_latt_vecs(k, :)
-        end do
-        
-        !call gauss_reduce(temp_latt_vecs(1,1:3),temp_latt_vecs(2,1:3)) ! uncomment this line for 2D
-        
+
         do k=1,3
          do j=1,3
           hnf(k,j)=nint(sum(temp_latt_vecs(k,1:3)*rec_latt_vecs(j,1:3)))  
          enddo ! j
         enddo ! k
+
+        IF ( verbosity > 1 ) THEN
+            print*, 'reduced:'
+            do k=1,3
+                print*, temp_latt_vecs(k, :)
+            end do
+            print*, 'Reduced scaling matrix:'
+            do k=1,3
+                print*, hnf(k, :)
+            end do
+        ENDIF
         
         ! After the reduction, the minimum image distance is simply
         ! the length of the first lattice vector
         ! LK: No, I disagree there, this is only the minimum image distance for 
         ! an orthorhombic system. One has to take the angle into account!
-        min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
-        print*, 'Min image distance:', min_image_distance
-        min_image_distance_this_hnf = 0.0d0
+        ! min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
+        ! print*, 'Min image distance:', min_image_distance
+        !min_image_distance_this_hnf = 0.0d0
         DO k=1, 3
             cross_vector = cross(temp_latt_vecs(MOD(k,3)+1,1:3), temp_latt_vecs(MOD(k+1,3)+1,1:3))
             cross_vector(:) = cross_vector(:) / SQRT(SUM(cross_vector(:)*cross_vector(:)))
-            min_image_distance_this_dir = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
-            print*, 'Min image distance2:', min_image_distance_this_dir
-
-            IF ( min_image_distance < radius ) THEN
-                print*, 'found too small mim image distance'
-                cycle s23_loop
+            minimum_image_distances(k) = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
+            IF ( verbosity > 1) THEN
+                print*, 'Min image distance2:', minimum_image_distances(k)
             ENDIF
-            ! FOR this particular HNF, I calculate the minimum image distance
-            IF ( min_image_distance_this_hnf < min_image_distance_this_dir ) THEN
-                min_image_distance_this_hnf = min_image_distance_this_dir
+
+            IF ( minimum_image_distances(k) < radius ) THEN
+                IF ( verbosity > 1 ) print*, 'found too small mim image distance'
+                cycle s23_loop
             ENDIF
         END DO
         ! If I got here, it means I did not break minimum image distance criterion
         ! and that I have found a valid supercell
         found = .true.
-        
+        min_image_distance_this_hnf = minval(minimum_image_distances(:))
         if (min_image_distance_this_hnf > abs_best_min_image_distance) then
            abs_best_min_image_distance = min_image_distance_this_hnf
-           best_supercell = hnf
-           scaling_matrix = hnf
+           ! best_supercell = hnf
+           scaling_matrix(1:3,1:3) = hnf(1:3,1:3)
+           supercell_latt_vecs(1:3,1:3) = temp_latt_vecs(1:3,1:3)
            !best_abs_norm = 0
            !do j = 1, 3
            !   do k = 1, 3
            !      best_abs_norm = best_abs_norm + abs(best_supercell(k,j))
            !   end do
            !end do
-           write(*,*) 'New best minimum image distance:', abs_best_min_image_distance
+           IF ( verbosity > 0 ) print*, 'New best minimum image distance:', abs_best_min_image_distance
 !~         elseif (abs(min_image_distance-best_min_image_distance)<tol) then
 !~            abs_norm = 0 
 !~            do j = 1, 3
@@ -377,7 +405,7 @@ iter: DO
     enddo s22_loop
    enddo s11_loop
    if ( found ) THEN 
-    print*, "Exiting, I found a good volume", super_size
+    if (verbosity > 0 ) print*, "Exiting, I found a good volume", super_size
     exit volume_loop
    endif
  enddo volume_loop
@@ -386,21 +414,25 @@ iter: DO
   write(*,*)'Unable to find an optimal supercell.'
   stop
  endif 
- write(*,*) "Best minimum image distance: ", abs_best_min_image_distance
- write(*,*) "Optimal supercell: "
- do i = 1, 3
-    write(*,*) best_supercell(i,1:3)
- end do
+ if (verbosity > 0 ) THEN
+    write(*,*) "Best minimum image distance: ", abs_best_min_image_distance
+    write(*,*) "Optimal supercell: "
+
+     do i = 1, 3
+        write(*,*) scaling_matrix(i,1:3)
+     end do
+ endif
  END SUBROUTINE optimal_supercell_hnf
 
 
 PROGRAM optimal_supercell
  USE utils
+ USE, intrinsic :: iso_fortran_env
  implicit none
  INTEGER ierr
- REAL(dp), dimension(3,3) :: cell
+ REAL*8, dimension(3,3) :: cell
  INTEGER, dimension(3,3) ::  scaling_matrix
- REAL(dp) :: radius
+ REAL*8 :: radius
  INTEGER :: k
  open(unit=11, file='cell_and_radius.dat', status='old', iostat=ierr)
  if(ierr/=0)then
