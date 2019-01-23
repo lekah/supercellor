@@ -21,17 +21,23 @@ class Test(unittest.TestCase):
         #~ with open('structure.json','w') as f:
             #~ json.dump(structure.as_dict(), f)
         
-        supercell1, scale1 = make_supercell(structure, min_image_distance=3, verbosity=2, wrap=True, standardize=True, do_niggli_first=False)
-        supercell2, scale2 = make_supercell(structure, min_image_distance=3, verbosity=2, wrap=True, standardize=True, do_niggli_first=True)
+        supercell1, scale1 = make_supercell(structure, min_image_distance=3,
+                verbosity=2, wrap=True, standardize=True, do_niggli_first=False)
+        supercell2, scale2 = make_supercell(structure, min_image_distance=3,
+                verbosity=2, wrap=True, standardize=True, do_niggli_first=True)
 
         sa = SpacegroupAnalyzer(supercell1, symprec=1e-21, angle_tolerance=-1)
         supercell_refine = sa.get_refined_structure()
         for i in range(3):
             for j in range(3):
-                self.assertTrue(abs(supercell1._lattice.matrix[i,j] - supercell2._lattice.matrix[i,j]) < 1e-1, '{} != {} for i,j={},{}'.format(
-                    supercell1._lattice.matrix[i,j], supercell2._lattice.matrix[i,j],i,j))
-                self.assertTrue(abs(supercell1._lattice.matrix[i,j] - supercell_refine._lattice.matrix[i,j]) < 1e-1, '{} != {} for i,j={},{}'.format(
-                    supercell1._lattice.matrix[i,j], supercell_refine._lattice.matrix[i,j],i,j))
+                self.assertTrue(abs(supercell1._lattice.matrix[i,j] - supercell2._lattice.matrix[i,j]) < 1e-1, 
+                    '{} != {} for i,j={},{}'.format(
+                        supercell1._lattice.matrix[i,j],
+                        supercell2._lattice.matrix[i,j], i,j))
+                self.assertTrue(abs(supercell1._lattice.matrix[i,j] - supercell_refine._lattice.matrix[i,j]) < 1e-1,
+                    '{} != {} for i,j={},{}'.format(
+                        supercell1._lattice.matrix[i,j],
+                        supercell_refine._lattice.matrix[i,j],i,j))
     def test_methods_compatibility(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
@@ -63,6 +69,7 @@ class Test(unittest.TestCase):
             with open('data/structure-1.json', 'r') as f:
                 d = json.load(f)
                 structure = Structure.from_dict(d)
+            print structure._lattice
 
         supercell1, scale1 = make_supercell(structure, min_image_distance=3, method='hnf', verbosity=2, wrap=True, standardize=False, do_niggli_first=False)
         det1 = utils.determinant33_int(scale1)

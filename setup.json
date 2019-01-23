@@ -22,7 +22,7 @@
         ]
     }, 
     "install_requires": [
-        "pymatgen",
+        "pymatgen==2018.8.7",
         "spglib",
         "numpy"
     ],

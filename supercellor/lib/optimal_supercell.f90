@@ -17,8 +17,8 @@
 !--------------------------!
 ! Miscellaneous utilities. !
 !--------------------------!
- USE constants
- USE, intrinsic :: iso_fortran_env
+ ! USE constants
+ ! USE, intrinsic :: iso_fortran_env
  IMPLICIT NONE
  
  CONTAINS
@@ -430,7 +430,7 @@ PROGRAM optimal_supercell
  USE, intrinsic :: iso_fortran_env
  implicit none
  INTEGER ierr
- REAL*8, dimension(3,3) :: cell
+ REAL*8, dimension(3,3) :: cell, supercell
  INTEGER, dimension(3,3) ::  scaling_matrix
  REAL*8 :: radius
  INTEGER :: k
@@ -448,7 +448,7 @@ PROGRAM optimal_supercell
   stop
  endif ! ierr
  close(11)
- call optimal_supercell_hnf(cell, radius, scaling_matrix)
+ call optimal_supercell_hnf(cell, radius, 1, scaling_matrix, supercell)
  open(unit=12,file='supercell.dat',status='replace',iostat=ierr)
  if(ierr/=0)then
     write(*,*)'Problem opening supercell.dat file.'
