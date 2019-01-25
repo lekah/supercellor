@@ -207,11 +207,6 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
     boundaries[2,0] = (R[2,3] + np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3] - EPSILON
     boundaries[2,1] = (R[2,3] - np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3] + EPSILON
 
-    #~ ymax = (R[1,3] - np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3]
-    #~ ymin = (R[1,3] + np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3]
-    #~ zmax = (R[2,3] - np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3]
-    #~ zmin = (R[2,3] + np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3]
-
     # I create the first reduced grid, that is all the grids within the bounding box:
     Gc_r0 =  np.array([a.flatten() for a 
             in np.meshgrid(*[np.arange(lbound, ubound+1, 1)
