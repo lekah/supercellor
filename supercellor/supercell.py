@@ -15,6 +15,9 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from spglib import standardize_cell
 from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
 
+
+EPSILON = 1e-6 # The precision when comparing floats!
+
 def rotate(R, lattice_vecs, frac_coords):
     new_lattice_vecs = np.dot(lattice_vecs.T, R).T
     new_frac_coords = np.dot(frac_coords, R)
@@ -28,14 +31,238 @@ def get_angles(cell_matrix):
     return k_a, k_b, k_c
 
 
-def make_supercell(structure, min_image_distance, method='hnf', wrap=True, standardize=True,
+def standardize_cell(cell, wrap):
+    frac_coords = np.empty((len(cell), 3))
+    cellvecs = cell._lattice.matrix
+    for i, site in enumerate(cell):
+        frac_coords[i,:] = site.frac_coords
+
+    # The code below sorts the cell and positions by lattice vector length,
+    # shortest first:
+    veclens = sorted([(np.linalg.norm(v), i) for i, v in enumerate(cellvecs)])
+    M1 = np.zeros((3,3))
+    for row, (_, idx) in enumerate(veclens):
+        M1[idx, row] = 1
+    cellvecs, frac_coords = rotate(M1, cellvecs, frac_coords)
+
+    k_a, k_b, k_c = get_angles(cellvecs)
+    right_angle = 0.5*np.pi
+    if ((k_a <= right_angle and k_b <= right_angle and k_c <= right_angle ) or 
+        (k_a > right_angle and k_b > right_angle and k_c > right_angle )):
+        M2 = np.eye(3)
+    elif ((k_a <= right_angle and k_b > right_angle and k_c > right_angle ) or 
+        (k_a > right_angle and k_b <= right_angle and k_c <= right_angle )):
+        M2 = np.diag([1,-1,-1])
+    elif ((k_a > right_angle and k_b <= right_angle and k_c > right_angle ) or 
+        (k_a <= right_angle and k_b > right_angle and k_c <= right_angle )):
+        M2 = np.diag([-1,1,-1])
+    elif ((k_a > right_angle and k_b > right_angle and k_c <= right_angle ) or 
+        (k_a <= right_angle and k_b <= right_angle and k_c > right_angle )):
+        M2 = np.diag([-1,-1,1])
+    else:
+        raise RuntimeError("Unrecognized case for k_a={}, k_b={}, k_c={}".format(k_a,k_b, k_c))
+    cellvecs, frac_coords = rotate(M2, cellvecs, frac_coords)
+    # Now applying the rules layed out in  http://arxiv.org/abs/1506.01455
+    # to get the standardized triclinic cell.
+    # Since not all cells give to me are triclinic < -> <= with respect to
+    # the paper. So it's not truly standardized!
+    metric = np.dot(cellvecs, cellvecs.T)
+
+    a = np.sqrt(metric[0, 0])
+    b = np.sqrt(metric[1, 1])
+    c = np.sqrt(metric[2, 2])
+    alpha = np.arccos(metric[1, 2] / b / c)
+    beta = np.arccos(metric[0][2] / a / c)
+    gamma = np.arccos(metric[0][1] / a / b)
+
+    cg = np.cos(gamma)
+    cb = np.cos(beta)
+    ca = np.cos(alpha)
+    sg = np.sin(gamma)
+
+    cellvecs = np.zeros((3,3))
+    cellvecs[0, 0] = a
+    cellvecs[1, 0] = b * cg
+    cellvecs[2, 0] = c * cb
+    cellvecs[1, 1] = b * sg
+    cellvecs[2, 1] = c * (ca - cb * cg) / sg
+    cellvecs[2, 2] = c * np.sqrt(1 - ca * ca - cb * cb - cg * cg + 2 * ca * cb * cg) / sg
+    
+    # And some checks:
+    if (
+        cellvecs[0,0] < -1e-12 or
+        abs(cellvecs[0,1]) > 1e-12 or
+        abs(cellvecs[0,2]) > 1e-12):
+        raise ValueError("First lattice vector not aligned with x-axis")
+    if  (
+        cellvecs[1,1] < -1e-12 or
+        abs(cellvecs[1,2]) > 1e-12):
+        raise ValueError("Second lattice vector not in X-Y plane in first quadrant")
+    if  (cellvecs[2,2] < 0):
+        raise ValueError("Third lattice vector not in positive Z-direction")
+    
+    new_sites = []
+    new_lattice = Lattice(cellvecs)
+
+    for i, site in enumerate(cell):
+        s = PeriodicSite(site.species_and_occu, frac_coords[i],
+                        new_lattice, properties=site.properties,
+                        coords_are_cartesian=False, to_unit_cell=wrap)
+        new_sites.append(s)
+    
+    cell = Structure.from_sites(new_sites)
+    return cell
+
+def get_diagonal_solution(cell, r_inner):
+    # getting the vectors:
+    a,b,c = [np.array(v) for v in cell]
+    R_diag = np.zeros((3,3), dtype=int)
+    #repetitions =[None]*3
+    for index, (n1, n2, n3) in enumerate(((a,b,c), (b,c,a), (c,a,b))):
+        d23 = np.cross(n2, n3) 
+        d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
+        R_diag[index, index] = int(math.ceil(2*r_inner/d1)) # x2 to get diameter
+    #R_diag = np.diag(repetitions)
+    return R_diag, np.dot(R_diag, cell).T
+
+def get_trial_vecs_old(cell, r_inner, verbosity=1):
+    """
+    Returns all possible vectors (as integer crystal coordinates)
+    that lie outside a sphere of radius min_dist_soll, but within a sphere given by a
+    maximum radius that is determined by the upper bound, the diagonal solution.
+    The trial vectors could be iteratively reduced with better solutions found, while still being exhaustive
+    """
+    # Would be good to first LLL/Niggle reduce to make the upper bound as low as possible.
+    R_diag, C_diag = get_diagonal_solution(cell, r_inner)
+    v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
+    r_outer = v_diag / r_inner**2
+    maxradius = r_outer
+    #return
+    repetitions = [R_diag[i,i] for i in range(3)]
+    diagvol = v_diag
+
+    if verbosity:
+        print "Volume of diagonal supercell:", diagvol
+    maxradius =  diagvol /  r_inner**2
+    # Now I find all vectors that lie within the maxradius but outside the minradius
+    # Inversion symmetry allows me to look only in the upper half.
+    trials = []
+    for ia in range(0, repetitions[0]+1):
+    #for ia in range(-repetitions[0], repetitions[0]+1):
+        for ib in range(-repetitions[1], repetitions[1]+1):
+        #for ib in range(0, repetitions[1]+1):
+            for ic in range(-repetitions[2], repetitions[2]+1):
+            #for ic in range(0, repetitions[2]+1):
+                vector = ia*cell[0]+ib*cell[1]+ic*cell[2]
+                #print vector, np.linalg.norm(vector)
+                veclen = np.linalg.norm(vector)
+                if r_inner <= veclen <= maxradius:
+                    trials.append((veclen, ia, ib, ic, vector))
+    trials = sorted(trials)
+    return trials #, maxcell_coords, diagvol
+
+def get_possible_solutions(cell, r_inner, verbosity=1):
+    """
+    Returns all possible vectors (as integer crystal coordinates)
+    that lie outside a sphere of radius min_dist_soll, but within a sphere given by a
+    maximum radius that is determined by the upper bound, the diagonal solution.
+    The trial vectors could be iteratively reduced with better solutions found, while still being exhaustive
+    """
+    def apply_sym_ops(G, cell):
+        """
+        Apply possible symmetry operations.
+        For now, i am reducing by removing all negative indices in the third direction
+        """
+        return G[G[:,2] >= 0, :]
+        
+    # Would be good to first LLL/Niggle reduce to make the upper bound as low as possible.
+    
+    #atoms = structure.get_ase()
+    R_diag, C_diag = get_diagonal_solution(cell, r_inner)
+
+    v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
+    r_outer = v_diag / r_inner**2 / 8.0
+
+    S = np.matrix(np.diag([1,1,1,-r_outer**2]))
+
+    cellT = cell.T
+    cellI = np.matrix(cell).I
+    cellTI = np.matrix(cellT).I
+    #  I describe the move from atomic to crystal coordinates with an affine transformation M:
+    M=  np.matrix(np.r_[np.c_[np.matrix(cellTI), np.zeros(3)], [[0,0,0,1]]])
+    # Q is a check, but not used. Check is orthogonality
+    # Q is the sphere transformed by transformation M
+    Q =  M.I.T * S * M.I
+    # Now, as defined in the source, I calculate R = Q^(-1)
+    R = M * S.I *M.T
+    # The boundaries are given by:
+    boundaries = np.zeros((3,2), dtype=int) # results truncated to integer
+    boundaries[0,0] = (R[0,3] + np.sqrt(R[0,3]**2 - R[0,0]*R[3,3])) / R[3,3] - EPSILON
+    boundaries[0,1] = (R[0,3] - np.sqrt(R[0,3]**2 - R[0,0]*R[3,3])) / R[3,3] + EPSILON
+    
+
+    boundaries[1,0] = (R[1,3] + np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3] - EPSILON
+    boundaries[1,1] = (R[1,3] - np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3] + EPSILON
+
+    boundaries[2,0] = (R[2,3] + np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3] - EPSILON
+    boundaries[2,1] = (R[2,3] - np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3] + EPSILON
+
+    #~ ymax = (R[1,3] - np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3]
+    #~ ymin = (R[1,3] + np.sqrt(R[1,3]**2 - R[1,1]*R[3,3])) / R[3,3]
+    #~ zmax = (R[2,3] - np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3]
+    #~ zmin = (R[2,3] + np.sqrt(R[2,3]**2 - R[2,2]*R[3,3])) / R[3,3]
+
+    # I create the first reduced grid, that is all the grids within the bounding box:
+    Gc_r0 =  np.array([a.flatten() for a 
+            in np.meshgrid(*[np.arange(lbound, ubound+1, 1)
+                    for lbound, ubound in boundaries])]).T
+
+    if verbosity > 1:
+        print ('Gc_r0')
+        for item in Gc_r0:
+            print '  {:>3} {:>3} {:>3}'.format(*item)
+    # I reduced the grid further by apply symmetry operations to the grid.
+    # I do this before calculating any distances, since distances are expensive
+    Gc_r1 = apply_sym_ops(Gc_r0, cell)
+    # getting the gridpoints in real space, no longer the grid
+    Gr_r1  = np.dot(Gc_r1, cell)
+    # calculating the norm:
+    norms_of_Gr_r1 = np.linalg.norm(Gr_r1, axis=1)
+    msk = (norms_of_Gr_r1 > ( r_inner -EPSILON) ) & (norms_of_Gr_r1 < (r_outer + EPSILON) ) 
+
+    Gr_r2 = Gr_r1[msk, :]
+    Gc_r2 = Gc_r1[msk, :]
+    norms_of_Gr_r2 = norms_of_Gr_r1[msk]
+
+
+    if verbosity > 1:
+        print ('Gc_r01')
+        for item, norm in zip(Gc_r1, norms_of_Gr_r1):
+            print '  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm)
+        print ('Gc_r02')
+        for item, norm in zip(Gc_r2, norms_of_Gr_r2):
+            print '  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm)
+        print r_inner, r_outer
+        print R_diag
+    # Now I am sorting everything via the norm:
+    sorted_argindex = norms_of_Gr_r2.argsort()
+    sorted_Gr_r2 = Gr_r2[sorted_argindex, :]
+    sorted_Gc_r2 = Gc_r2[sorted_argindex, :]
+    norms_of_sorted_Gr_r2 = norms_of_Gr_r2[sorted_argindex]
+
+    return norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag
+
+
+
+def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True,
         do_niggli_first=True, verbosity=1):
     """
     Creates from a given structure a supercell based on the required minimal dimension
     :param structure: The pymatgen structure to create the supercell for
-    :param float min_image_distance: The minimum image distance as a float,
+    :param float r_inner: The minimum image distance as a float,
         The cell created will not have any periodic image below this distance
-    :param str method: Can either be "hnf" or "bfv"
+    :param str method: The method to get the optimal supercell. For now, the only
+        implemented option is *best enclosing cell*
     :param bool wrap: Wrap the atoms into the created cell after replication
     :param bool standardize: Standardize the created cell.
         This is done based on the rules in Hinuma etal, http://arxiv.org/abs/1506.01455
@@ -53,10 +280,10 @@ def make_supercell(structure, min_image_distance, method='hnf', wrap=True, stand
     if not isinstance(structure, Structure):
         raise TypeError("Structure passed has to be a pymatgen structure")
     try:
-        min_image_distance = float(min_image_distance)
-        assert min_image_distance>1e-12, "Non-positive number"
+        r_inner = float(r_inner)
+        assert r_inner>1e-12, "Non-positive number"
     except Exception as e:
-        print "You have to pass positive float or integer as min_image_distance"
+        print "You have to pass positive float or integer as r_inner"
         raise e
 
     if not isinstance(wrap, bool):
@@ -66,30 +293,33 @@ def make_supercell(structure, min_image_distance, method='hnf', wrap=True, stand
 
     # I'm getting the niggli reduced structure as first:
     if verbosity > 1:
-        print "given cell:"
-        print structure._lattice
+        print("given cell:\n", structure._lattice)
     if do_niggli_first:
         starting_structure = structure.get_reduced_structure(reduction_algo=u'niggli')
     else:
         starting_structure = structure
     if verbosity > 1:
-        print "starting cell:"
-        print starting_structure._lattice
+        print( "starting cell:\n", starting_structure._lattice)
         for i, v in enumerate(starting_structure._lattice.matrix):
-            print i, np.linalg.norm(v)
+            print( i, np.linalg.norm(v))
     
     # the lattice of the niggle reduced structure:
     lattice_cellvecs = np.array(starting_structure._lattice.matrix, dtype=np.float64)
     # trial_vecs are all possible vectors sorted by the norm
-    if method == 'bfv':
-        trial_vecs = get_trial_vecs(lattice_cellvecs, min_image_distance, verbosity=verbosity)
+    if method == 'bec':
+        reduced_solutions = get_possible_solutions(lattice_cellvecs, r_inner,
+                            verbosity=verbosity)
         if verbosity:
-            print "I received {} trial vectors".format(len(trial_vecs))
+            print( "I received {} possible solutions".format(len(reduced_solutions[0])))
         # I pass these trial vectors into the function to find the minimum volume:
-        scale_matrix, supercell_cellvecs = find_min_vol(trial_vecs, lattice_cellvecs, min_image_distance, verbosity=verbosity)
+        scale_matrix, supercell_cellvecs = get_optimal_solution(
+                *reduced_solutions, r_inner=r_inner, verbosity=verbosity)
     elif method == 'hnf':
+        raise NotImplementedError("HNF has not been fully implemented")
         lattice_cellvecs = np.array(lattice_cellvecs)
-        scale_matrix, supercell_cellvecs = optimal_supercell_hnf(lattice_cellvecs, min_image_distance, verbosity)
+        scale_matrix, supercell_cellvecs = optimal_supercell_hnf(lattice_cellvecs, r_inner, verbosity)
+    else:
+        raise ValueError("Unknown method {}".format(method))
     # Constructing the new lattice:
     new_lattice = Lattice(supercell_cellvecs)
     # I create f_lat, which are the fractional lattice points of the niggle_reduced:
@@ -99,14 +329,13 @@ def make_supercell(structure, min_image_distance, method='hnf', wrap=True, stand
     #~ cellT = supercell_cellvecs.T
 
     if verbosity > 1:
-        print "Given lattice:"
-        print new_lattice
+        print("Given lattice:\n", new_lattice)
         for i, v in enumerate(new_lattice.matrix):
-            print i, np.linalg.norm(v)
+            print(i, np.linalg.norm(v))
 
     new_sites = []
     if verbosity:
-        print "Done, constructing structure"
+        print("Done, constructing structure")
     for site in starting_structure:
         for v in c_lat:
             new_sites.append(PeriodicSite(site.species_and_occu, site.coords +v,
@@ -116,212 +345,102 @@ def make_supercell(structure, min_image_distance, method='hnf', wrap=True, stand
     supercell = Structure.from_sites(new_sites)
 
     if standardize:
-        frac_coords = np.empty((len(supercell), 3))
-        for i, site in enumerate(supercell):
-            frac_coords[i,:] = site.frac_coords
-
-        # The code below sorts the cell and positions by lattice vector length,
-        # shortest first:
-        veclens = sorted([(np.linalg.norm(v), i) for i, v in enumerate(supercell_cellvecs)])
-        M1 = np.zeros((3,3))
-        for row, (_, idx) in enumerate(veclens):
-            M1[idx, row] = 1
-        supercell_cellvecs, frac_coords = rotate(M1, supercell_cellvecs, frac_coords)
-
-        k_a, k_b, k_c = get_angles(supercell_cellvecs)
-        right_angle = 0.5*np.pi
-        if ((k_a <= right_angle and k_b <= right_angle and k_c <= right_angle ) or 
-            (k_a > right_angle and k_b > right_angle and k_c > right_angle )):
-            M2 = np.eye(3)
-        elif ((k_a <= right_angle and k_b > right_angle and k_c > right_angle ) or 
-            (k_a > right_angle and k_b <= right_angle and k_c <= right_angle )):
-            M2 = np.diag([1,-1,-1])
-        elif ((k_a > right_angle and k_b <= right_angle and k_c > right_angle ) or 
-            (k_a <= right_angle and k_b > right_angle and k_c <= right_angle )):
-            M2 = np.diag([-1,1,-1])
-        elif ((k_a > right_angle and k_b > right_angle and k_c <= right_angle ) or 
-            (k_a <= right_angle and k_b <= right_angle and k_c > right_angle )):
-            M2 = np.diag([-1,-1,1])
-        else:
-            raise RuntimeError("Unrecognized case for k_a={}, k_b={}, k_c={}".format(k_a,k_b, k_c))
-        supercell_cellvecs, frac_coords = rotate(M2, supercell_cellvecs, frac_coords)
-        # Now applying the rules layed out in  http://arxiv.org/abs/1506.01455
-        # to get the standardized triclinic cell.
-        # Since not all cells give to me are triclinic < -> <= with respect to
-        # the paper. So it's not truly standardized!
-        metric = np.dot(supercell_cellvecs, supercell_cellvecs.T)
-
-        a = np.sqrt(metric[0, 0])
-        b = np.sqrt(metric[1, 1])
-        c = np.sqrt(metric[2, 2])
-        alpha = np.arccos(metric[1, 2] / b / c)
-        beta = np.arccos(metric[0][2] / a / c)
-        gamma = np.arccos(metric[0][1] / a / b)
-
-        cg = np.cos(gamma)
-        cb = np.cos(beta)
-        ca = np.cos(alpha)
-        sg = np.sin(gamma)
-
-        supercell_cellvecs = np.zeros((3,3))
-        supercell_cellvecs[0, 0] = a
-        supercell_cellvecs[1, 0] = b * cg
-        supercell_cellvecs[2, 0] = c * cb
-        supercell_cellvecs[1, 1] = b * sg
-        supercell_cellvecs[2, 1] = c * (ca - cb * cg) / sg
-        supercell_cellvecs[2, 2] = c * np.sqrt(1 - ca * ca - cb * cb - cg * cg + 2 * ca * cb * cg) / sg
-        
-        # And some checks:
-        if (
-            supercell_cellvecs[0,0] < -1e-12 or
-            abs(supercell_cellvecs[0,1]) > 1e-12 or
-            abs(supercell_cellvecs[0,2]) > 1e-12):
-            raise ValueError("First lattice vector not aligned with x-axis")
-        if  (
-            supercell_cellvecs[1,1] < -1e-12 or
-            abs(supercell_cellvecs[1,2]) > 1e-12):
-            raise ValueError("Second lattice vector not in X-Y plane in first quadrant")
-        if  (supercell_cellvecs[2,2] < 0):
-            raise ValueError("Third lattice vector not in positive Z-direction")
-        
-        new_sites = []
-        new_lattice = Lattice(supercell_cellvecs)
-
-        for i, site in enumerate(supercell):
-            s = PeriodicSite(site.species_and_occu, frac_coords[i],
-                            new_lattice, properties=site.properties,
-                            coords_are_cartesian=False, to_unit_cell=wrap)
-            new_sites.append(s)
-        
-        supercell = Structure.from_sites(new_sites)
-
-        #~ view(ad.get_atoms(supercell))
+        supercell = standardize_cell(supercell, wrap)
         if verbosity > 1:
-            print "Cell after standardization:"
-            print new_lattice
+            print("Cell after standardization:\n",  new_lattice)
             for i, v in enumerate(new_lattice.matrix):
-                print i, np.linalg.norm(v)
-
+                print (i, np.linalg.norm(v))
     return supercell, scale_matrix
-    
 
 
 
-def get_trial_vecs(cell, min_image_distance, verbosity=1):
-    """
-    Returns all possible vectors (as integer crystal coordinates)
-    that lie outside a sphere of radius min_dist_soll, but within a sphere given by a
-    maximum radius that is determined by the upper bound, the diagonal solution.
-    The trial vectors could be iteratively reduced with better solutions found, while still being exhaustive
-    """
-    # Would be good to first LLL/Niggle reduce to make the upper bound as low as possible.
-    
-    #atoms = structure.get_ase()
-    a,b,c = [np.array(v) for v in cell]
-    repetitions =[None]*3
-    for index, item in enumerate(((a,b,c), (b,c,a), (c,a,b))):
-        n1, n2, n3 = item
-        d23 = np.cross(n2, n3) 
-        d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
-        repetitions[index] = int(math.ceil(min_image_distance/d1))
-    maxcell = np.array([rep*v for rep, v in zip(repetitions, cell)])
-    maxcell_coords = np.diag(repetitions)
-    diagvol = np.abs(np.dot(np.cross(maxcell[0], maxcell[1]), maxcell[2]))
-    if verbosity:
-        print "Volume of diagonal supercell:", diagvol
-    maxradius =  diagvol /  min_image_distance**2
-    # Now I find all vectors that lie within the maxradius but outside the minradius
-    # Inversion symmetry allows me to look only in the upper half.
-    trials = []
-    for ia in range(0, repetitions[0]+1):
-    #for ia in range(-repetitions[0], repetitions[0]+1):
-        for ib in range(-repetitions[1], repetitions[1]+1):
-        #for ib in range(0, repetitions[1]+1):
-            for ic in range(-repetitions[2], repetitions[2]+1):
-            #for ic in range(0, repetitions[2]+1):
-                vector = ia*cell[0]+ib*cell[1]+ic*cell[2]
-                #print vector, np.linalg.norm(vector)
-                veclen = np.linalg.norm(vector)
-                if min_image_distance <= veclen <= maxradius:
-                    trials.append((veclen, ia, ib, ic, vector))
-    trials = sorted(trials)
-    return trials #, maxcell_coords, diagvol
-
-def find_min_vol(trial_vecs, cell, min_image_distance, verbosity=1):
+def get_optimal_solution(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag,
+        r_inner, verbosity=1):
 
     min_volume = np.inf
-    max_min_per_image_distance = 0
-    max_radius = trial_vecs[-1][0]
-    for i1, (veclen1, ia1, ib1, ic1, vector1) in enumerate(trial_vecs, start=0):
-        if verbosity > 1:
-            print ia1, ib1, ic1, vector1
-        if veclen1 > max_radius:
+    max_min_inter_face_dist = 0
+    #max_radius = trial_vecs[-1][0]
+    indices = range(len(norms_of_sorted_Gr_r2))
+    R_best = np.zeros((3,3), dtype=int)
+    C_best = np.zeros((3,3), dtype=float)
+    
+    for i1, norm1 in enumerate(norms_of_sorted_Gr_r2, start=0):
+        if norm1 > r_outer + EPSILON:
+            # At this point I have finished!
             break
-        for i2, (veclen2, ia2, ib2, ic2, vector2) in enumerate(trial_vecs[i1+1:], start=i1+1):
-            if verbosity > 1:
-                print '  -- ', ia2, ib2, ic2, vector2
-            if veclen2 > max_radius:
-                if verbosity > 1:
-                    print '   -> Max radius surpassed, break'
+        vector1 = sorted_Gr_r2[i1]
+        for i2, norm2 in enumerate(norms_of_sorted_Gr_r2[i1+1:], start=i1+1):
+            if norm2 > r_outer + EPSILON:
+                # I can stop iterating over the possible second vectors
                 break
             # Checking the dot product, so that I continue if the vectors have an angle < 60
-            if np.abs(np.dot(vector1, vector2)) / (veclen1*veclen2) >= 0.5:
+            vector2 = sorted_Gr_r2[i2]
+            if np.abs(np.dot(vector1, vector2)) / (norm1*norm2) >= 0.5:
                 if verbosity > 1:
                     print '   -> Angle < 60, continue'
                 continue
-            for i3, (veclen3, ia3, ib3, ic3, vector3) in enumerate(trial_vecs[i2+1:], start=i2+1):
-                if verbosity > 1:
-                    print '    -- ', ia3, ib3, ic3, vector3
-                if veclen3 > max_radius:
+            for i3, norm3 in enumerate(norms_of_sorted_Gr_r2[i2+1:], start=i2+1):
+                if norm3 > r_outer:
                     if verbosity > 1:
                         print '     -> Max radius surpassed, break'
                     break
-                if np.abs(np.dot(vector2, vector3)) / (veclen2*veclen3) >= 0.5:
+                vector3 = sorted_Gr_r2[i3]
+                if np.abs(np.dot(vector2, vector3)) / (norm2*norm3) >= 0.5:
                     if verbosity > 1:
                         print '     -> Angle < 60, continue'
                     continue
-                elif np.abs(np.dot(vector1, vector3)) / (veclen1*veclen3) >= 0.5:
+                elif np.abs(np.dot(vector1, vector3)) / (norm1*norm3) >= 0.5:
                     if verbosity > 1:
                         print '     -> Angle < 60, continue'
                     continue
                 # checking intersections of each plane
                 cross23 = np.cross(vector2, vector3)
                 d1 = np.abs(np.dot(cross23/np.linalg.norm(cross23), vector1))
-                if d1 < min_image_distance:
+                if d1 < r_inner:
                     if verbosity > 1:
-                        print '     -> d1 {} < min_image_distance, continue'.format(d1)
+                        print '     -> d1 {} < r_inner, continue'.format(d1)
                     continue
                 cross13 = np.cross(vector1, vector3)
                 d2 = np.abs(np.dot(cross13/np.linalg.norm(cross13), vector2))
-                if d2 < min_image_distance:
+                if d2 < r_inner:
                     if verbosity > 1:
-                        print '     -> d2 {} < min_image_distance, continue'.format(d2)
+                        print '     -> d2 {} < r_inner, continue'.format(d2)
                     continue
                 cross12 = np.cross(vector1, vector2)
                 d3 = np.abs(np.dot(cross12/np.linalg.norm(cross12), vector3))
-                if d3 < min_image_distance:
+                if d3 < r_inner:
                     if verbosity > 1:
-                        print '     -> d3 {} < min_image_distance, continue'.format(d3)
+                        print '     -> d3 {} < r_inner, continue'.format(d3)
                     continue
-                volume = np.abs(np.dot(np.cross(vector1,vector2), vector3))
-                min_per_image_distance = min((d1,d2, d3))
-                if volume < min_volume:
+
+                volume = np.abs(
+                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 2]+
+                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 0]+
+                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 1]-
+                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 2]-
+                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 0]-
+                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 1])
+
+                min_inter_face_dist = min((d1,d2, d3))
+
+                if volume < min_volume or (
+                        volume == min_volume and 
+                        min_inter_face_dist > max_min_inter_face_dist):
                     min_volume = volume
-                    max_radius = min_volume/min_image_distance**2
-                    max_min_per_image_distance = min_per_image_distance
-                    is_best = True
-                elif volume == min_volume and min_per_image_distance > max_min_per_image_distance:
-                    max_min_per_image_distance = min_per_image_distance
-                    is_best = True
-                else:
-                    is_best = False
-                if is_best:
+                    r_outer = min_volume/r_inner**2
+                    max_min_inter_face_dist = min_inter_face_dist
+
                     if verbosity:
-                        print "New optimal supercell {} & {}".format(volume, max_min_per_image_distance)
-                    chosen_coords = np.array(((ia1,ib1,ic1),(ia2,ib2,ic2),(ia3,ib3,ic3)))
-                    cellvecs = np.array([vector1, vector2, vector3])
+                        print "New optimal supercell {} & {}".format(volume, max_min_inter_face_dist)
+                    R_best[0,:] = sorted_Gc_r2[i1]
+                    R_best[1,:] = sorted_Gc_r2[i2]
+                    R_best[2,:] = sorted_Gc_r2[i3]
+                    C_best[0,:] = vector1
+                    C_best[1,:] = vector2
+                    C_best[2,:] = vector3
+
     if verbosity:
-        print 'FINAL'
-        print chosen_coords
-    return np.array(chosen_coords, dtype=int), np.array(cellvecs)
+        print('FINAL\n')
+        print(R_best)
+    return R_best, C_best
 
