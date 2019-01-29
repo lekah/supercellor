@@ -1,7 +1,8 @@
 import unittest
 
 class Test(unittest.TestCase):
-    #~ @unittest.skipIf(True,"")
+
+
     def test_niggli(self):
         from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
         from pymatgen.core.structure import Structure
@@ -37,7 +38,8 @@ class Test(unittest.TestCase):
                     '{} != {} for i,j={},{}'.format(
                         supercell1._lattice.matrix[i,j],
                         supercell_refine._lattice.matrix[i,j],i,j))
-    @unittest.skipIf(True,"")
+
+    @unittest.skipIf(True,"This is meant to test HNF")
     def test_methods_compatibility(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
@@ -72,13 +74,7 @@ class Test(unittest.TestCase):
             print structure._lattice
 
         supercell2, scale2 = make_supercell(structure, r_inner=10, method='bec', verbosity=1, wrap=True, standardize=True, do_niggli_first=False)
-        det2 = utils.determinant33_int(scale2)
-        #~ print det1, det2
-        #~ print 'LATTICE HNF'
-        #~ print supercell1._lattice
-        #~ print 'LATTICE BFV'
-        print supercell2._lattice
-        #~ self.assertEqual(abs(det1), abs(det2))
+
     #~ @unittest.skipIf(True,"")
     def test_structures(self):
         import itertools
@@ -90,11 +86,11 @@ class Test(unittest.TestCase):
 
         from supercellor.supercell import make_supercell
 
-        NTESTS = 100
+        NTESTS = 100 #100
         RADIUS = 100.0
         EPS = 1e-3
-        DIAG = 5
-        NOISE_R = 6
+        DIAG = 2
+        NOISE_R = 1
         tests_run = 0
         np.random.seed(10)
         while (tests_run < NTESTS):
@@ -117,11 +113,63 @@ class Test(unittest.TestCase):
             except np.linalg.LinAlgError:
                 continue
             structure = Structure.from_sites(sites)
-            
             supercell, scale = make_supercell(structure, r_inner=RADIUS-EPS,
-                    verbosity=1, wrap=True, standardize=True, do_niggli_first=True)
+                    verbosity=0, wrap=True, standardize=True, do_niggli_first=True)
             self.assertTrue(np.sum(np.abs(supercell._lattice.matrix - S))< EPS)
             tests_run += 1
+
+    def test_equivalence_fort_py(self):
+        from datetime import datetime
+        import itertools
+        import numpy as np
+
+        from pymatgen.core.structure import Structure
+        from pymatgen.core.lattice import Lattice
+        from pymatgen.core.sites import PeriodicSite
+
+        from supercellor.supercell import make_supercell
+
+
+
+        # tests per radius
+        NTESTS = 10 #100
+        VERBOSITY = 0
+        for radius in np.arange(1.0, 3.1, 1.0):
+            #RADIUS = 5.0
+            tests_run = 0
+            np.random.seed(10) # reinitialize seed!
+            timings_f = 0.0
+            timings_p = 0.0
+            while (tests_run < NTESTS):
+                P = np.eye(3)+ 0.1*(np.random.random((3,3)) -0.5)
+                lattice = Lattice(P)
+                if lattice.volume < 0.1:
+                    print 'skipping', lattice.volume
+                    continue
+                sites = []
+                try:
+                    for pos in itertools.product([-0.5,0.5], repeat=3):
+                        sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
+                except np.linalg.LinAlgError:
+                    continue
+                structure = Structure.from_sites(sites)
+                n = datetime.now()
+                supercell_p, scale_p = make_supercell(structure, r_inner=radius,
+                        verbosity=VERBOSITY, wrap=True, standardize=True, do_niggli_first=True,
+                        implementation='pyth')
+                timings_p += (datetime.now()-n).microseconds
+                n = datetime.now()
+                supercell_f, scale_f = make_supercell(structure, r_inner=radius,
+                        verbosity=VERBOSITY, wrap=True, standardize=True, do_niggli_first=True,
+                        implementation='fort')
+                timings_f += (datetime.now()-n).microseconds
+                self.assertTrue(np.sum((scale_p-scale_f)**2) ==0)
+                self.assertTrue(np.sum((supercell_f._lattice.matrix -supercell_p._lattice.matrix)**2) < 1e-6)
+
+                #~ self.assertTrue(np.sum(np.abs(supercell._lattice.matrix - S))< EPS)
+                tests_run += 1
+            print('Avg timing fortran impl rad={} {:.2e}'.format(radius, 1e-6*timings_f/ tests_run))
+            print('Avg timing python  impl rad={} {:.2e}'.format(radius, 1e-6*timings_p/ tests_run))
 
 if __name__ == '__main__':
     unittest.main()

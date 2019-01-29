@@ -62,6 +62,42 @@ FUNCTION cross(a, b)
   cross(3) = a(1) * b(2) - a(2) * b(1)
 END FUNCTION cross
 
+
+ FUNCTION cross_normed(a, b)
+ 
+  !
+  ! Calculates the cross product of 2 3d-vectors
+  ! and devides by the norm
+  !
+  IMPLICIT NONE
+  REAL*8, DIMENSION(3) :: cross_normed
+  REAL*8 :: norm
+  REAL*8, DIMENSION(3), INTENT(IN) :: a, b
+  cross_normed = cross(a, b)
+  norm = sqrt(sum(cross_normed(1:3)*cross_normed(1:3)))
+  cross_normed(:) = cross_normed(:) / norm
+
+
+END FUNCTION cross_normed
+
+
+ FUNCTION dot(a,b)
+  ! Calculates the dot-product of 2 3d-vectors
+  IMPLICIT NONE
+  REAL*8, INTENT(IN) :: a(3), b(3)
+  REAL*8 :: dot
+  dot = SUM(a(1:3) * b(1:3))
+ END FUNCTION dot
+
+ FUNCTION angle(a,b)
+  ! Calculates the dot-product of 2 3d-vectors and divides by the norm
+  IMPLICIT NONE
+  REAL*8, INTENT(IN) :: a(3), b(3)
+  REAL*8 :: angle
+  angle = SUM(a(1:3) * b(1:3)) / sqrt(sum(a(1:3) * a(1:3))) / sqrt(sum(b(1:3) * b(1:3)))
+ END FUNCTION angle
+
+
 FUNCTION diag_vol(cell, radius)
   !
   ! Calculates the diagonal cell and gives the number of repetitions necessary
@@ -248,6 +284,122 @@ iter: DO
 
  END MODULE utils
 
+
+ SUBROUTINE optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, &
+    sorted_Gr_r2, r_outer_, v_diag, r_inner, verbosity, N, R_best, C_best)
+  USE utils
+  use, intrinsic :: iso_fortran_env
+  IMPLICIT NONE
+  INTEGER, INTENT(IN) :: N
+  REAL*8, INTENT(IN)  :: norms_of_sorted_Gr_r2(N)
+  INTEGER, INTENT(IN) :: sorted_Gc_r2(N,3)
+  REAL*8, INTENT(IN)  :: sorted_Gr_r2(N,3)
+  REAL*8, INTENT(IN)  :: r_inner
+  REAL*8,  INTENT(IN) :: r_outer_
+  INTEGER, INTENT(IN) :: v_diag
+  INTEGER, INTENT(IN) :: verbosity
+
+
+  ! variable used here
+  INTEGER  :: volume, min_volume=0
+
+
+  INTEGER :: i1, i2, i3 ! counting vars
+  REAL*8  :: norm1, norm2, norm3 ! Here I load the norms, for convenience
+  REAL*8  :: d(3) ! for interplane-distancess
+  REAL*8  :: r_outer
+  REAL*8  :: vector1(3), vector2(3), vector3(3) ! Here I load vectors, convencience
+  REAL*8  :: cross13(3), cross23(3), cross12(3)
+  REAL*8  :: min_inter_face_dist, max_min_inter_face_dist=0.0D0
+
+
+
+  REAL*8, PARAMETER :: EPSILON=1.0D-6
+
+
+  INTEGER :: R(3,3) ! the R matrix
+  INTEGER,  INTENT(OUT) :: R_best(3,3) ! the R matrix
+  REAL*8, INTENT(OUT):: C_best(3,3) ! the C matrix = R*cell
+
+
+  R_best(:,:) = 0
+  C_best(:,:) = 0.0D0
+  min_volume  = huge(min_volume)
+  r_outer = r_outer_
+
+
+  DO i1=1,N
+    
+    norm1 = norms_of_sorted_Gr_r2(i1)
+    IF ( norm1 > (r_outer - EPSILON) ) EXIT
+    vector1(1:3) = sorted_Gr_r2(i1,1:3)
+    if (verbosity > 1) print*, '  setting vector1', vector1
+    DO i2=i1+1, N
+      norm2 = norms_of_sorted_Gr_r2(i2)
+      IF ( norm2 > (r_outer - EPSILON) ) EXIT
+      vector2(1:3) = sorted_Gr_r2(i2,1:3)
+      if (verbosity > 1) print*, '    setting vector2', vector2
+      IF (ABS(dot(vector1, vector2) / (norm1 * norm2)) > 0.5D0 - EPSILON) THEN
+        IF (verbosity > 1) print*, '   -> Angle 12 < 60, continue'
+        CYCLE
+      ENDIF
+
+      DO  i3=i2+1,N
+        norm3 = norms_of_sorted_Gr_r2(i3)
+        IF ( norm3 > (r_outer - EPSILON) ) EXIT
+        vector3(1:3) = sorted_Gr_r2(i3,1:3)
+        if (verbosity > 1) print*, '      setting vector3', vector3
+        IF (ABS(dot(vector1, vector3) / (norm1 * norm3)) > 0.5D0 - EPSILON) THEN
+          IF (verbosity > 1) print*, '   -> Angle 13 < 60, continue'
+          CYCLE
+        ENDIF
+        IF (ABS(dot(vector2, vector3) / (norm2 * norm3)) > 0.5D0 - EPSILON) THEN
+          IF (verbosity > 1) print*, '   -> Angle 23 < 60, continue'
+          CYCLE
+        ENDIF
+        ! checking intersections of each plane
+        cross23 = cross_normed(vector2, vector3)
+        d(1) = ABS(dot(cross23, vector1))
+        if ( d(1) < r_inner + EPSILON) THEN
+          if (verbosity > 1) print*, '     -> d1', r_inner,' < r_inner, continue'
+          cycle
+        endif
+        cross13 = cross_normed(vector1, vector3)
+        d(2) = ABS(dot(cross13, vector2))
+        if ( d(2) < r_inner + EPSILON) THEN
+          if (verbosity > 1) print*, '     -> d2', r_inner,' < r_inner, continue'
+          cycle
+        endif
+        cross12 = cross_normed(vector1, vector2)
+        d(3) = ABS(dot(cross12, vector3))
+        if ( d(3) < r_inner + EPSILON) THEN
+          if (verbosity > 1) print*, '     -> d3', r_inner,' < r_inner, continue'
+          cycle
+        endif
+        ! Now I load into R
+        R(1, :) = sorted_Gc_r2(i1, :)
+        R(2, :) = sorted_Gc_r2(i2, :)
+        R(3, :) = sorted_Gc_r2(i3, :)
+        volume = abs(determinant33_int(R))
+        min_inter_face_dist = minval(d)
+        if ((volume < min_volume ) .or. ( (volume .eq. min_volume) .and. &
+                        (min_inter_face_dist > max_min_inter_face_dist) )) THEN
+            min_volume = volume
+            r_outer = DBLE(min_volume) / r_inner**2
+            max_min_inter_face_dist = min_inter_face_dist
+
+            if ( verbosity > 0) THEN
+              print*, "New optimal supercell",volume, max_min_inter_face_dist
+            endif
+            R_best(:,:) = R(:,:)
+            C_best(1,:) = vector1(:)
+            C_best(2,:) = vector2(:)
+            C_best(3,:) = vector3(:)
+        endif
+      ENDDO
+    ENDDO
+  ENDDO
+ END SUBROUTINE optimal_supercell_bec
 
  SUBROUTINE optimal_supercell_hnf(prim_latt_vecs, radius, verbosity, scaling_matrix, supercell_latt_vecs)
 !---------------------!

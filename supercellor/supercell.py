@@ -15,7 +15,8 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from spglib import standardize_cell
 
-#from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
+from supercellor.lib.optimal_supercell import (
+    utils, optimal_supercell_hnf, optimal_supercell_bec)
 
 
 EPSILON = 1e-6 # The precision when comparing floats!
@@ -140,10 +141,7 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
         For now, i am reducing by removing all negative indices in the third direction
         """
         return G[G[:,2] >= 0, :]
-        
-    # Would be good to first LLL/Niggle reduce to make the upper bound as low as possible.
-    
-    #atoms = structure.get_ase()
+
     R_diag, C_diag = get_diagonal_solution(cell, r_inner)
 
     v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
@@ -216,7 +214,7 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
 
 
 def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True,
-        do_niggli_first=True, verbosity=1):
+        do_niggli_first=True, implementation='fort', verbosity=1):
     """
     Creates from a given structure a supercell based on the required minimal dimension
     :param structure: The pymatgen structure to create the supercell for
@@ -233,6 +231,8 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
     :param bool do_niggli_first: Start with a niggli reduction of the cell,
         to enable a faster search. Disable if there are problems with the reduction
         of if the cell is already Niggli or LLL reduced.
+    :param str implementation: Either fortran or python-implementation, when
+        method is 'bec'
     :param int verbosity: Sets the verbosity level.
 
     :returns: A new pymatgen core structure instance and the used scaling matrix
@@ -259,22 +259,31 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
         starting_structure = structure.get_reduced_structure(reduction_algo=u'niggli')
     else:
         starting_structure = structure
+
     if verbosity > 1:
         print( "starting cell:\n", starting_structure._lattice)
         for i, v in enumerate(starting_structure._lattice.matrix):
             print( i, np.linalg.norm(v))
-    
+
     # the lattice of the niggle reduced structure:
     lattice_cellvecs = np.array(starting_structure._lattice.matrix, dtype=np.float64)
     # trial_vecs are all possible vectors sorted by the norm
     if method == 'bec':
-        reduced_solutions = get_possible_solutions(lattice_cellvecs, r_inner,
+        (norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
+            v_diag ) = get_possible_solutions(lattice_cellvecs, r_inner,
                             verbosity=verbosity)
         if verbosity:
-            print( "I received {} possible solutions".format(len(reduced_solutions[0])))
+            print( "I received {} possible solutions".format(len(norms_of_sorted_Gr_r2)))
         # I pass these trial vectors into the function to find the minimum volume:
-        scale_matrix, supercell_cellvecs = get_optimal_solution(
-                *reduced_solutions, r_inner=r_inner, verbosity=verbosity)
+        if implementation == 'pyth':
+            scale_matrix, supercell_cellvecs = get_optimal_solution(
+                norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
+                v_diag, r_inner=r_inner, verbosity=verbosity)
+        elif implementation == 'fort':
+            scale_matrix, supercell_cellvecs = optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
+                v_diag, r_inner, verbosity,len(norms_of_sorted_Gr_r2))
+        else:
+            raise RuntimeError("Implementation {}".formt(implementation))
     elif method == 'hnf':
         raise NotImplementedError("HNF has not been fully implemented")
         lattice_cellvecs = np.array(lattice_cellvecs)
@@ -326,26 +335,34 @@ def get_optimal_solution(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_ou
     C_best = np.zeros((3,3), dtype=float)
     
     for i1, norm1 in enumerate(norms_of_sorted_Gr_r2, start=0):
-        if norm1 > r_outer + EPSILON:
+        if norm1 > r_outer - EPSILON:
             # At this point I have finished!
             break
         vector1 = sorted_Gr_r2[i1]
+        if verbosity > 1:
+            print '  Setting vector1', vector1
         for i2, norm2 in enumerate(norms_of_sorted_Gr_r2[i1+1:], start=i1+1):
-            if norm2 > r_outer + EPSILON:
+            if norm2 > r_outer - EPSILON:
                 # I can stop iterating over the possible second vectors
                 break
+
             # Checking the dot product, so that I continue if the vectors have an angle < 60
             vector2 = sorted_Gr_r2[i2]
+            if verbosity > 1:
+                print '    Setting vector2', vector2
             if np.abs(np.dot(vector1, vector2)) / (norm1*norm2) >= 0.5:
                 if verbosity > 1:
                     print '   -> Angle < 60, continue'
                 continue
             for i3, norm3 in enumerate(norms_of_sorted_Gr_r2[i2+1:], start=i2+1):
-                if norm3 > r_outer:
+                if norm3 > r_outer - EPSILON:
                     if verbosity > 1:
                         print '     -> Max radius surpassed, break'
                     break
                 vector3 = sorted_Gr_r2[i3]
+                if verbosity > 1:
+                    print '      Setting vector3', vector3
+
                 if np.abs(np.dot(vector2, vector3)) / (norm2*norm3) >= 0.5:
                     if verbosity > 1:
                         print '     -> Angle < 60, continue'
