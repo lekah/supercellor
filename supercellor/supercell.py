@@ -284,6 +284,9 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
                 v_diag, r_inner, verbosity,len(norms_of_sorted_Gr_r2))
         else:
             raise RuntimeError("Implementation {}".formt(implementation))
+    elif method == 'diag':
+        lattice_cellvecs = np.array(lattice_cellvecs)
+        scale_matrix, supercell_cellvecs = get_diagonal_solution(lattice_cellvecs, r_inner)
     elif method == 'hnf':
         raise NotImplementedError("HNF has not been fully implemented")
         lattice_cellvecs = np.array(lattice_cellvecs)
