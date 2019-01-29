@@ -10,22 +10,20 @@ class Test(unittest.TestCase):
         from supercellor.supercell import make_supercell
         import numpy as np
         import itertools
-        return
-        lattice = Lattice( 5*(np.random.random((3,3))-0.5))
-        
+
+        np.random.seed(4)
+
+        lattice = Lattice( 1*np.eye(3) + 0.5*(np.random.random((3,3))-0.5))
         sites = []
         for pos in itertools.product([-0.5,0.5], repeat=3):
             sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
 
         structure = Structure.from_sites(sites)
 
-        #~ with open('structure.json','w') as f:
-            #~ json.dump(structure.as_dict(), f)
-        
         supercell1, scale1 = make_supercell(structure, r_inner=3,
-                verbosity=2, wrap=True, standardize=True, do_niggli_first=False)
+                verbosity=1, wrap=True, standardize=True, do_niggli_first=False)
         supercell2, scale2 = make_supercell(structure, r_inner=3,
-                verbosity=2, wrap=True, standardize=True, do_niggli_first=True)
+                verbosity=1, wrap=True, standardize=True, do_niggli_first=True)
 
         sa = SpacegroupAnalyzer(supercell1, symprec=1e-21, angle_tolerance=-1)
         supercell_refine = sa.get_refined_structure()
@@ -81,7 +79,7 @@ class Test(unittest.TestCase):
         #~ print 'LATTICE BFV'
         print supercell2._lattice
         #~ self.assertEqual(abs(det1), abs(det2))
-    #~ @unittest.skipIf(True,"")
+    @unittest.skipIf(True,"")
     def test_structures(self):
         import itertools
         import numpy as np
