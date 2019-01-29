@@ -79,7 +79,7 @@ class Test(unittest.TestCase):
         #~ print 'LATTICE BFV'
         print supercell2._lattice
         #~ self.assertEqual(abs(det1), abs(det2))
-    @unittest.skipIf(True,"")
+    #~ @unittest.skipIf(True,"")
     def test_structures(self):
         import itertools
         import numpy as np
