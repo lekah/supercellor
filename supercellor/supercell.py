@@ -1,18 +1,20 @@
 
 import numpy as np
-from time import sleep
-from matplotlib import pyplot as plt
-from matplotlib.patches import Ellipse
+
 import math
 from pymatgen.core.structure import Structure
 from pymatgen.core.lattice import Lattice
+
 try:
     from pymatgen.util.coord import lattice_points_in_supercell
 except ImportError:
     from pymatgen.util.coord_utils import lattice_points_in_supercell
+
 from pymatgen.core.sites import Site, PeriodicSite
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+
 from spglib import standardize_cell
+
 from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
 
 
@@ -121,45 +123,9 @@ def get_diagonal_solution(cell, r_inner):
     for index, (n1, n2, n3) in enumerate(((a,b,c), (b,c,a), (c,a,b))):
         d23 = np.cross(n2, n3) 
         d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
-        R_diag[index, index] = int(math.ceil(2*r_inner/d1)) # x2 to get diameter
-    #R_diag = np.diag(repetitions)
+        R_diag[index, index] = int(np.ceil(2*r_inner/d1)) # x2 to get diameter
     return R_diag, np.dot(R_diag, cell).T
 
-def get_trial_vecs_old(cell, r_inner, verbosity=1):
-    """
-    Returns all possible vectors (as integer crystal coordinates)
-    that lie outside a sphere of radius min_dist_soll, but within a sphere given by a
-    maximum radius that is determined by the upper bound, the diagonal solution.
-    The trial vectors could be iteratively reduced with better solutions found, while still being exhaustive
-    """
-    # Would be good to first LLL/Niggle reduce to make the upper bound as low as possible.
-    R_diag, C_diag = get_diagonal_solution(cell, r_inner)
-    v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
-    r_outer = v_diag / r_inner**2
-    maxradius = r_outer
-    #return
-    repetitions = [R_diag[i,i] for i in range(3)]
-    diagvol = v_diag
-
-    if verbosity:
-        print "Volume of diagonal supercell:", diagvol
-    maxradius =  diagvol /  r_inner**2
-    # Now I find all vectors that lie within the maxradius but outside the minradius
-    # Inversion symmetry allows me to look only in the upper half.
-    trials = []
-    for ia in range(0, repetitions[0]+1):
-    #for ia in range(-repetitions[0], repetitions[0]+1):
-        for ib in range(-repetitions[1], repetitions[1]+1):
-        #for ib in range(0, repetitions[1]+1):
-            for ic in range(-repetitions[2], repetitions[2]+1):
-            #for ic in range(0, repetitions[2]+1):
-                vector = ia*cell[0]+ib*cell[1]+ic*cell[2]
-                #print vector, np.linalg.norm(vector)
-                veclen = np.linalg.norm(vector)
-                if r_inner <= veclen <= maxradius:
-                    trials.append((veclen, ia, ib, ic, vector))
-    trials = sorted(trials)
-    return trials #, maxcell_coords, diagvol
 
 def get_possible_solutions(cell, r_inner, verbosity=1):
     """
