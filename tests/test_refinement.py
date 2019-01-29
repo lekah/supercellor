@@ -1,7 +1,7 @@
 import unittest
 
 class Test(unittest.TestCase):
-    @unittest.skipIf(True,"")
+    #~ @unittest.skipIf(True,"")
     def test_niggli(self):
         from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
         from pymatgen.core.structure import Structure
@@ -39,13 +39,13 @@ class Test(unittest.TestCase):
                     '{} != {} for i,j={},{}'.format(
                         supercell1._lattice.matrix[i,j],
                         supercell_refine._lattice.matrix[i,j],i,j))
-    #~ @unittest.skipIf(True,"")
+    @unittest.skipIf(True,"")
     def test_methods_compatibility(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
         from pymatgen.core.sites import PeriodicSite
         from supercellor.supercell import make_supercell
-        from supercellor.lib.optimal_supercell import utils
+        #from supercellor.lib.optimal_supercell import utils
         import json, numpy as np, itertools, os
         create_new = False
         if create_new:
@@ -73,8 +73,6 @@ class Test(unittest.TestCase):
                 structure = Structure.from_dict(d)
             print structure._lattice
 
-        #~ supercell1, scale1 = make_supercell(structure, r_inner=3, method='hnf', verbosity=2, wrap=True, standardize=False, do_niggli_first=False)
-        #~ det1 = utils.determinant33_int(scale1)
         supercell2, scale2 = make_supercell(structure, r_inner=10, method='bec', verbosity=1, wrap=True, standardize=True, do_niggli_first=False)
         det2 = utils.determinant33_int(scale2)
         #~ print det1, det2
@@ -125,7 +123,7 @@ class Test(unittest.TestCase):
             supercell, scale = make_supercell(structure, r_inner=RADIUS-EPS,
                     verbosity=1, wrap=True, standardize=True, do_niggli_first=True)
             self.assertTrue(np.sum(np.abs(supercell._lattice.matrix - S))< EPS)
-        
             tests_run += 1
+
 if __name__ == '__main__':
     unittest.main()

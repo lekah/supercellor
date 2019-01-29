@@ -15,7 +15,7 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from spglib import standardize_cell
 
-from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
+#from supercellor.lib.optimal_supercell import utils, optimal_supercell_hnf
 
 
 EPSILON = 1e-6 # The precision when comparing floats!
