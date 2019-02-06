@@ -42,6 +42,7 @@ class Test(unittest.TestCase):
         self.assertTrue(supercell1._lattice.volume <= supercell2._lattice.volume)
 
 
+    #~ @unittest.skipIf(True,"")
     def test_hnf_dmpi(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
@@ -50,6 +51,7 @@ class Test(unittest.TestCase):
         #from supercellor.lib.optimal_supercell import utils
         import json, numpy as np, itertools, os
         np.random.seed(50)
+        print '\n'
         for trial in range(10):
             lattice = Lattice( 1.0*np.eye(3) + 0.2*(np.random.random((3,3))-0.5))
             sites = []
@@ -58,15 +60,15 @@ class Test(unittest.TestCase):
             structure = Structure.from_sites(sites)
 
             for rad in np.linspace(3, 10, 4):
-                supercell1, scale1 = make_supercell(structure, r_inner=rad, method='hnf', verbosity=1, wrap=True, standardize=False, do_niggli_first=False)
+                supercell1, scale1 = make_supercell(structure, r_inner=rad, method='hnf', verbosity=0, wrap=True, standardize=False, do_niggli_first=False)
                 reduced_supercell1 = supercell1.get_reduced_structure(reduction_algo=u'LLL')
+                print 'distances not red.:', np.linalg.norm(supercell1._lattice.matrix, axis=1)
+                print 'angles not red.:', supercell1._lattice.angles
+                print 'distances reduced :', np.linalg.norm(reduced_supercell1._lattice.matrix, axis=1)
+                print 'angles reduced:', reduced_supercell1._lattice.angles
                 for dim in range(3):
                     self.assertTrue(np.linalg.norm(reduced_supercell1._lattice.matrix[dim]) >= rad)
-                print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-                print supercell1._lattice.angles
-                print reduced_supercell1._lattice.angles
-                print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-                raw_input()
+
 
 
 if __name__ == '__main__':

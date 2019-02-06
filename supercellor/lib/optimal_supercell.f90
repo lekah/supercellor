@@ -418,16 +418,12 @@ iter: DO
  REAL*8,PARAMETER :: tol=1.d-8
  INTEGER :: i,j,k,s11,s12,s13,s22,s23,s33, & !abs_norm, best_abs_norm, &
  &quotient,min_super_size, max_super_size, super_size,hnf(3,3) !,best_supercell(3,3) 
- REAL*8 :: rec_latt_vecs(3,3), temp_latt_vecs(3,3), cross_vector(3)
+ REAL*8 :: rec_latt_vecs(3,3), temp_latt_vecs(3,3)
  REAL*8 :: cell_volume, abs_best_min_image_distance, & !min_image_distance, &
-        min_image_distance_this_hnf, minimum_image_distances(3)
+        min_image_distance, best_min_image_distance, best_abs_norm, abs_norm
+        
  LOGICAL :: found 
- print*, radius
- print*, scaling_matrix
- print*, prim_latt_vecs
-! Get the primitive cell lattice vectors and the target radius
 
- 
  call inv33(prim_latt_vecs,rec_latt_vecs)
  rec_latt_vecs=transpose(rec_latt_vecs)
 
@@ -435,7 +431,7 @@ iter: DO
  
  ! The minimal value for the supercell size is set by requiring that the volume
  ! of the supercell is at least equal to a cube that contains the target sphere
- min_super_size = int(radius**3/cell_volume)
+ min_super_size = 1 ! int(radius**3/cell_volume)
  max_super_size = diag_vol(prim_latt_vecs, radius)
  IF ( verbosity > 0 ) THEN
     write(*,*) "Unit cell volume: ", cell_volume
@@ -443,10 +439,9 @@ iter: DO
     write(*,*) "Maximal supercell size: ", max_super_size
  ENDIF
 
- ! Initialize to zero the best minimum image distance
- abs_best_min_image_distance = 0.0d0
- 
+ ! Initialize to zero the best_min_image_distance to required one
  found = .false.
+ best_min_image_distance = radius
  
  volume_loop: do super_size = min_super_size, max_super_size
    s11_loop: do s11=1,super_size
@@ -482,7 +477,7 @@ iter: DO
                 print*, temp_latt_vecs(k, :)
             end do
         ENDIF
-        
+        !
         call reduce_vecs(temp_latt_vecs) ! comment this line for 2D
 
         do k=1,3
@@ -501,56 +496,40 @@ iter: DO
                 print*, hnf(k, :)
             end do
         ENDIF
-        
         ! After the reduction, the minimum image distance is simply
         ! the length of the first lattice vector
-        ! LK: No, I disagree there, this is only the minimum image distance for 
-        ! an orthorhombic system. One has to take the angle into account!
-        ! min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
-        ! print*, 'Min image distance:', min_image_distance
-        !min_image_distance_this_hnf = 0.0d0
-        DO k=1, 3
-            cross_vector = cross(temp_latt_vecs(MOD(k,3)+1,1:3), temp_latt_vecs(MOD(k+1,3)+1,1:3))
-            cross_vector(:) = cross_vector(:) / SQRT(SUM(cross_vector(:)*cross_vector(:)))
-            minimum_image_distances(k) = abs(sum(cross_vector(:)*temp_latt_vecs(k,1:3)))
-            IF ( verbosity > 1) THEN
-                print*, 'Min image distance2:', minimum_image_distances(k)
-            ENDIF
+        min_image_distance = sqrt(sum(temp_latt_vecs(1,1:3)*temp_latt_vecs(1,1:3)))
+        if (min_image_distance > best_min_image_distance) then
+            ! This first case, I have a min_image_distance that's better than the
+            ! set one. I found a valid solution
+            found = .true.
+            scaling_matrix(1:3,1:3) = hnf(1:3,1:3)
+            supercell_latt_vecs(1:3,1:3) = temp_latt_vecs(1:3,1:3)
 
-            IF ( minimum_image_distances(k) < radius ) THEN
-                IF ( verbosity > 1 ) print*, 'found too small mim image distance'
-                cycle s23_loop
-            ENDIF
-        END DO
-        ! If I got here, it means I did not break minimum image distance criterion
-        ! and that I have found a valid supercell
-        found = .true.
-        min_image_distance_this_hnf = minval(minimum_image_distances(:))
-        if (min_image_distance_this_hnf > abs_best_min_image_distance) then
-           abs_best_min_image_distance = min_image_distance_this_hnf
-           ! best_supercell = hnf
-           scaling_matrix(1:3,1:3) = hnf(1:3,1:3)
-           supercell_latt_vecs(1:3,1:3) = temp_latt_vecs(1:3,1:3)
-           !best_abs_norm = 0
-           !do j = 1, 3
-           !   do k = 1, 3
-           !      best_abs_norm = best_abs_norm + abs(best_supercell(k,j))
-           !   end do
-           !end do
-           IF ( verbosity > 0 ) print*, 'New best minimum image distance:', abs_best_min_image_distance
-!~         elseif (abs(min_image_distance-best_min_image_distance)<tol) then
-!~            abs_norm = 0 
-!~            do j = 1, 3
-!~               do k = 1, 3
-!~                  abs_norm = abs_norm + abs(hnf(k,j))
-!~               end do
-!~            end do
-!~            if (abs_norm < best_abs_norm) then
-!~                best_supercell = hnf
-!~                best_abs_norm = abs_norm
-!~            end if 
+            ! However, it might be that there's an even better solution for this volume
+            ! So, setting best_min_image_distance to current min_image_distance
+            best_min_image_distance = min_image_distance
+
+            ! I also calculate the best_abs_norm, in case of equal min_image_distance
+            ! I will decide based on the norm.
+            best_abs_norm = 0
+            do j = 1, 3
+                do k = 1, 3
+                    best_abs_norm = best_abs_norm + abs(scaling_matrix(k,j))
+                end do
+            end do
+        elseif (abs(min_image_distance-best_min_image_distance)<tol) then
+            abs_norm = 0 
+            do j = 1, 3
+                do k = 1, 3
+                    abs_norm = abs_norm + abs(hnf(k,j))
+                end do
+            end do
+            if (abs_norm < best_abs_norm) then
+                scaling_matrix(1:3,1:3) = hnf(1:3,1:3)
+                best_abs_norm = abs_norm
+            end if
         end if
-        
        enddo s23_loop
       enddo s13_loop
      enddo s12_loop
