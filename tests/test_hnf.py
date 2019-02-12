@@ -66,6 +66,8 @@ class Test(unittest.TestCase):
                 print 'angles not red.:', supercell1._lattice.angles
                 print 'distances reduced :', np.linalg.norm(reduced_supercell1._lattice.matrix, axis=1)
                 print 'angles reduced:', reduced_supercell1._lattice.angles
+                # I check if any dimension is lower then rad!
+                # if this is the case, we are wrong
                 for dim in range(3):
                     self.assertTrue(np.linalg.norm(reduced_supercell1._lattice.matrix[dim]) >= rad)
 
