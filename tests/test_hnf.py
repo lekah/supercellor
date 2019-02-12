@@ -58,9 +58,12 @@ class Test(unittest.TestCase):
             for pos in itertools.product([-0.5,0.5], repeat=3):
                 sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
             structure = Structure.from_sites(sites)
+            print "The primitive cell:"
+            for i in range(3):
+                print structure._lattice.matrix[i]
 
             for rad in np.linspace(3, 10, 4):
-                supercell1, scale1 = make_supercell(structure, r_inner=rad, method='hnf', verbosity=0, wrap=True, standardize=False, do_niggli_first=False)
+                supercell1, scale1 = make_supercell(structure, r_inner=rad, method='hnf', verbosity=1, wrap=True, standardize=False, do_niggli_first=False)
                 reduced_supercell1 = supercell1.get_reduced_structure(reduction_algo=u'LLL')
                 print 'distances not red.:', np.linalg.norm(supercell1._lattice.matrix, axis=1)
                 print 'angles not red.:', supercell1._lattice.angles

@@ -437,6 +437,10 @@ iter: DO
     write(*,*) "Unit cell volume: ", cell_volume
     write(*,*) "Minimal supercell size: ", min_super_size
     write(*,*) "Maximal supercell size: ", max_super_size
+    print*, "The primitive cell:"
+    do i=1,3
+      write(*,*) prim_latt_vecs(i, 1:3)
+    enddo
  ENDIF
 
  ! Initialize to zero the best_min_image_distance to required one
