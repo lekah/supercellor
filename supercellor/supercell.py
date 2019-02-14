@@ -16,10 +16,11 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from spglib import standardize_cell
 
 from supercellor.lib.optimal_supercell import (
-    utils, optimal_supercell_hnf, optimal_supercell_bec)
+    utils, fort_optimal_supercell_hnf, fort_optimal_supercell_bec)
 
 
 EPSILON = 1e-6 # The precision when comparing floats!
+
 
 def rotate(R, lattice_vecs, frac_coords):
     new_lattice_vecs = np.dot(lattice_vecs.T, R).T
@@ -116,7 +117,7 @@ def standardize_cell(cell, wrap):
     cell = Structure.from_sites(new_sites)
     return cell
 
-def get_diagonal_solution(cell, r_inner):
+def get_diagonal_solution_bec(cell, r_inner):
     # getting the vectors:
     a,b,c = [np.array(v) for v in cell]
     R_diag = np.zeros((3,3), dtype=int)
@@ -125,8 +126,13 @@ def get_diagonal_solution(cell, r_inner):
         d23 = np.cross(n2, n3) 
         d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
         R_diag[index, index] = int(np.ceil(2*r_inner/d1)) # x2 to get diameter
-    return R_diag, np.dot(R_diag, cell).T
+    return R_diag, np.dot(R_diag, cell)
 
+def get_diagonal_solution_hnf(cell, dmpi):
+    a,b,c = [np.array(v) for v in cell]
+    norms = np.linalg.norm(cell, axis=1)
+    R_diag = np.diag(map(int, np.ceil(dmpi / norms )))
+    return R_diag, np.dot(R_diag, cell)
 
 def get_possible_solutions(cell, r_inner, verbosity=1):
     """
@@ -142,7 +148,7 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
         """
         return G[G[:,2] >= 0, :]
 
-    R_diag, C_diag = get_diagonal_solution(cell, r_inner)
+    R_diag, C_diag = get_diagonal_solution_bec(cell, r_inner)
 
     v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
     r_outer = v_diag / r_inner**2 / 8.0
@@ -211,6 +217,83 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
 
     return norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag
 
+ 
+def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
+    """
+    :param prim_cell: The primitive cell as a numpy array
+    :param float dmpi: The minimum image distance
+    :param int verbosity: The verbosity level
+    """
+    R_diag, C_diag = get_diagonal_solution_hnf(prim_cell, dmpi)
+    v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
+    # calculating the maximal volume as number of unit cell
+    # not using linalg, as it returns float
+    V_max = np.prod(np.diag(R_diag)) # np.linalg.det(R_diag)
+    hnf = np.zeros((3,3), dtype=int)
+    best_dmpi = dmpi
+    inv_prim_cell = np.linalg.inv(prim_cell)
+    found = False
+    V_min = 1 # Is there a better way to estimate V_min?
+    if verbosity > 0:
+        print "Testing HNF from {} to {}".format(V_min, V_max)
+    # Important. Rows and colums are exchanged, so I have to build the upper
+    # Hermite normal form!
+    count = 0
+    for V_s in range(1, V_max+1):
+        if verbosity >1:
+            print "ENTERING VOLUME", V_s
+        for a in range(1, V_max+1):
+            if V_s % a:
+                # If there is a modulo, I need to continue
+                continue
+            # this remains an integer, division integer by integer:
+            quotient = V_s / a
+            hnf[0,0] = a
+            for c in range(1, quotient+1):
+                if quotient % c:
+                    continue
+                f = quotient/c
+                hnf[1,1] = c
+                hnf[2,2] = f
+                for b in range(0, c):
+                    hnf[0,1] = b
+                    for d in range(0, f):
+                        hnf[0,2] = d
+                        for e in range(0, f):
+                            hnf[1, 2] = e
+                            count += 1
+                            C = np.dot(hnf, prim_cell)
+                            reduced = Lattice(C).get_lll_reduced_lattice(delta=0.75)
+                            C_red = reduced.matrix
+                            shortest_dist = np.linalg.norm(reduced.matrix, axis=1).min()
+                            R = np.rint(np.dot(C_red, inv_prim_cell)).astype(int)
+                            #~ if verbosity > 1 and count==114:
+                            if verbosity > 1:
+                                print '--------------------------'
+                                print count
+                                for key, val in (('HNF', hnf), ('C', C),
+                                        ('R', R), ('Reduced', C_red),
+                                        ('shortest', shortest_dist)):
+                                    print '{}:'.format(key)
+                                    print val
+                            if shortest_dist > best_dmpi:
+                                best_abs_norm = np.sum(np.abs(hnf))
+                                R_best = R
+                                C_best = C
+                                # Setting found for true, which means I will not
+                                # go to the next volume
+                                found = True
+                            elif abs(shortest_dist-best_dmpi) < EPSILON:
+                                abs_norm = np.sum(np.abs(hnf))
+                                if abs_norm < best_abs_norm:
+                                    R_best = R
+                                    C_best = C
+                                    best_abs_norm = abs_norm
+                                    found = True
+        if found:
+            break
+    return R_best, C_best
+
 
 
 def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True,
@@ -275,22 +358,30 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
         if verbosity:
             print( "I received {} possible solutions".format(len(norms_of_sorted_Gr_r2)))
         # I pass these trial vectors into the function to find the minimum volume:
-        if implementation == 'pyth':
-            scale_matrix, supercell_cellvecs = get_optimal_solution(
+        if implementation == 'diag':
+            lattice_cellvecs = np.array(lattice_cellvecs)
+            scale_matrix, supercell_cellvecs = get_diagonal_solution_bec(lattice_cellvecs, r_inner)
+        elif implementation == 'pyth':
+            scale_matrix, supercell_cellvecs = get_optimal_solution_bec(
                 norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
                 v_diag, r_inner=r_inner, verbosity=verbosity)
         elif implementation == 'fort':
-            scale_matrix, supercell_cellvecs = optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
+            scale_matrix, supercell_cellvecs = fort_optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
                 v_diag, r_inner, verbosity,len(norms_of_sorted_Gr_r2))
         else:
             raise RuntimeError("Implementation {}".formt(implementation))
-    elif method == 'diag':
-        lattice_cellvecs = np.array(lattice_cellvecs)
-        scale_matrix, supercell_cellvecs = get_diagonal_solution(lattice_cellvecs, r_inner)
     elif method == 'hnf':
+        if implementation == 'diag':
+            lattice_cellvecs = np.array(lattice_cellvecs)
+            scale_matrix, supercell_cellvecs = get_diagonal_solution_hnf(lattice_cellvecs, r_inner)
+        elif implementation == 'pyth':
+            scale_matrix, supercell_cellvecs = get_optimal_solution_hnf(lattice_cellvecs, r_inner, verbosity)
+        elif implementation == 'fort':
+            scale_matrix, supercell_cellvecs = fort_optimal_supercell_hnf(lattice_cellvecs, r_inner, verbosity)
+        else:
+            raise RuntimeError("Implementation {}".formt(implementation))
+    
         #raise NotImplementedError("HNF has not been fully implemented")
-        lattice_cellvecs = np.array(lattice_cellvecs)
-        scale_matrix, supercell_cellvecs = optimal_supercell_hnf(lattice_cellvecs, r_inner, verbosity)
     else:
         raise ValueError("Unknown method {}".format(method))
     # Constructing the new lattice:
@@ -302,7 +393,10 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
     #~ cellT = supercell_cellvecs.T
 
     if verbosity > 1:
-        print("Given lattice:\n", new_lattice)
+        print("Given Scaling:\n")
+        print scale_matrix
+        print("Given lattice:\n")
+        print (new_lattice)
         for i, v in enumerate(new_lattice.matrix):
             print(i, np.linalg.norm(v))
 
@@ -327,7 +421,7 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
 
 
 
-def get_optimal_solution(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag,
+def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag,
         r_inner, verbosity=1):
 
     min_volume = np.inf

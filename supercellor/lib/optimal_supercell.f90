@@ -285,7 +285,7 @@ iter: DO
  END MODULE utils
 
 
- SUBROUTINE optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, &
+ SUBROUTINE fort_optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, &
     sorted_Gr_r2, r_outer_, v_diag, r_inner, verbosity, N, R_best, C_best)
   USE utils
   use, intrinsic :: iso_fortran_env
@@ -399,9 +399,9 @@ iter: DO
       ENDDO
     ENDDO
   ENDDO
- END SUBROUTINE optimal_supercell_bec
+ END SUBROUTINE fort_optimal_supercell_bec
 
- SUBROUTINE optimal_supercell_hnf(prim_latt_vecs, radius, verbosity, scaling_matrix, supercell_latt_vecs)
+ SUBROUTINE fort_optimal_supercell_hnf(prim_latt_vecs, radius, verbosity, scaling_matrix, supercell_latt_vecs)
 !---------------------!
 !  OPTIMAL_SUPERCELL  !
 !---------------------!
@@ -416,7 +416,7 @@ iter: DO
  INTEGER, INTENT(IN) :: verbosity ! verbosity settings 0-3
 
  REAL*8,PARAMETER :: tol=1.d-8
- INTEGER :: i,j,k,s11,s12,s13,s22,s23,s33, & !abs_norm, best_abs_norm, &
+ INTEGER :: counter, i,j,k,s11,s12,s13,s22,s23,s33, & !abs_norm, best_abs_norm, &
  &quotient,min_super_size, max_super_size, super_size,hnf(3,3) !,best_supercell(3,3) 
  REAL*8 :: rec_latt_vecs(3,3), temp_latt_vecs(3,3)
  REAL*8 :: cell_volume, abs_best_min_image_distance, & !min_image_distance, &
@@ -446,7 +446,7 @@ iter: DO
  ! Initialize to zero the best_min_image_distance to required one
  found = .false.
  best_min_image_distance = radius
- 
+ counter = 0
  volume_loop: do super_size = min_super_size, max_super_size
    s11_loop: do s11=1,super_size
     if ( .not. mod(super_size,s11) == 0 ) cycle
@@ -466,12 +466,15 @@ iter: DO
         hnf(2,2)=s22
         hnf(2,3)=s23
         hnf(3,3)=s33
+        counter = counter + 1
         do k=1,3
           do j=1,3
            temp_latt_vecs(k,j)=sum(dble(hnf(k,1:3))*prim_latt_vecs(1:3,j))
           enddo ! j
         enddo ! k
         IF ( verbosity > 1 ) THEN
+            print*, '-------------------------------------------'
+            print*, counter
             print*, 'HNF:'
             do k=1,3
                 print*, hnf(k, :)
@@ -491,14 +494,19 @@ iter: DO
         enddo ! k
 
         IF ( verbosity > 1 ) THEN
-            print*, 'reduced:'
-            do k=1,3
-                print*, temp_latt_vecs(k, :)
-            end do
             print*, 'Reduced scaling matrix:'
             do k=1,3
                 print*, hnf(k, :)
             end do
+            print*, 'reduced:'
+            do k=1,3
+                print*, temp_latt_vecs(k, :)
+            end do
+            print*, 'shortest'
+            do k=1,3
+                print*, sqrt(sum(temp_latt_vecs(k,1:3)*temp_latt_vecs(k,1:3)))
+            enddo
+
         ENDIF
         ! After the reduction, the minimum image distance is simply
         ! the length of the first lattice vector
@@ -557,7 +565,7 @@ iter: DO
         write(*,*) scaling_matrix(i,1:3)
      end do
  endif
- END SUBROUTINE optimal_supercell_hnf
+ END SUBROUTINE fort_optimal_supercell_hnf
 
 
 PROGRAM optimal_supercell
@@ -583,7 +591,7 @@ PROGRAM optimal_supercell
   stop
  endif ! ierr
  close(11)
- call optimal_supercell_hnf(cell, radius, 1, scaling_matrix, supercell)
+ call fort_optimal_supercell_hnf(cell, radius, 1, scaling_matrix, supercell)
  open(unit=12,file='supercell.dat',status='replace',iostat=ierr)
  if(ierr/=0)then
     write(*,*)'Problem opening supercell.dat file.'
