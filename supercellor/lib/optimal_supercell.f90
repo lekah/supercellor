@@ -201,8 +201,8 @@ iter: DO
  prod23 = sum(vecs(2,1:3) * vecs(3,1:3))
  
  denom = 1.0d0 - prod12**2 / len2(1) /len2(2)
- y1 = - (prod23 - prod12 * prod13/len2(1))/len2(2)/denom
- y2 = - (prod13 - prod12 * prod23/len2(2))/len2(1)/denom
+ y1 = - (prod13 - prod12 * prod23/len2(2))/len2(1)/denom
+ y2 = - (prod23 - prod12 * prod13/len2(1))/len2(2)/denom
  
  ! Initialize to a large number the minimum length
  minlen = 100 * maxlen
