@@ -81,7 +81,7 @@ class Test(unittest.TestCase):
             self.assertTrue(np.sum(np.abs(supercell._lattice.matrix - S))< EPS)
             tests_run += 1
 
-    @unittest.skipIf(True,"")
+    #~ @unittest.skipIf(True,"")
     def test_equivalence_fort_py(self):
         from datetime import datetime
         import itertools
