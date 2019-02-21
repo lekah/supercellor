@@ -339,7 +339,7 @@ iter: DO
       IF ( norm2 > (r_outer - EPSILON) ) EXIT
       vector2(1:3) = sorted_Gr_r2(i2,1:3)
       if (verbosity > 1) print*, '    setting vector2', vector2
-      IF (ABS(dot(vector1, vector2) / (norm1 * norm2)) > 0.5D0 - EPSILON) THEN
+      IF (ABS(dot(vector1, vector2) / (norm1 * norm2)) - EPSILON > 0.5D0) THEN
         IF (verbosity > 1) print*, '   -> Angle 12 < 60, continue'
         CYCLE
       ENDIF
@@ -349,11 +349,11 @@ iter: DO
         IF ( norm3 > (r_outer - EPSILON) ) EXIT
         vector3(1:3) = sorted_Gr_r2(i3,1:3)
         if (verbosity > 1) print*, '      setting vector3', vector3
-        IF (ABS(dot(vector1, vector3) / (norm1 * norm3)) > 0.5D0 - EPSILON) THEN
+        IF (ABS(dot(vector1, vector3) / (norm1 * norm3))  - EPSILON > 0.5D0) THEN
           IF (verbosity > 1) print*, '   -> Angle 13 < 60, continue'
           CYCLE
         ENDIF
-        IF (ABS(dot(vector2, vector3) / (norm2 * norm3)) > 0.5D0 - EPSILON) THEN
+        IF (ABS(dot(vector2, vector3) / (norm2 * norm3))  - EPSILON > 0.5D0) THEN
           IF (verbosity > 1) print*, '   -> Angle 23 < 60, continue'
           CYCLE
         ENDIF
@@ -430,8 +430,9 @@ iter: DO
  cell_volume = determinant33(prim_latt_vecs)
  
  ! The minimal value for the supercell size is set by requiring that the volume
- ! of the supercell is at least equal to a cube that contains the target sphere
- min_super_size = 1 ! int(radius**3/cell_volume)
+ ! of the supercell is at least equal to a fourth of the cube
+ ! equivalent to close-packed structure.
+ min_super_size = int(0.25D0 * radius**3 / cell_volume)
  max_super_size = diag_vol(prim_latt_vecs, radius)
  IF ( verbosity > 0 ) THEN
     write(*,*) "Unit cell volume: ", cell_volume

@@ -2,7 +2,7 @@ import unittest
 
 class Test(unittest.TestCase):
 
-    @unittest.skipIf(True,"Fortran implementation doesn't work yet")
+    #~ @unittest.skipIf(True,"")
     def test_methods_compatibility(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
@@ -34,18 +34,17 @@ class Test(unittest.TestCase):
             with open('data/structure-1.json', 'r') as f:
                 d = json.load(f)
                 structure = Structure.from_dict(d)
-            print structure._lattice
 
-        RADIUS = 1.4
-        #~ RADIUS = 1.1
-        supercell1, scale1 = make_supercell(structure, r_inner=RADIUS, method='hnf', implementation='pyth', verbosity=2, wrap=True, standardize=True, do_niggli_first=False)
-        # make fortran work and test:
-        supercell2, scale2 = make_supercell(structure, r_inner=RADIUS, method='hnf', implementation='fort', verbosity=2, wrap=True, standardize=True, do_niggli_first=False)
-        print "FINAL", supercell1._lattice.volume, supercell2._lattice.volume
-        self.assertTrue(abs(supercell1._lattice.volume - supercell2._lattice.volume) < 1e-6)
+        for radius in np.linspace(1.0, 5.0, 5):
+            supercell1, scale1 = make_supercell(structure, distance=radius, method='hnf', implementation='pyth', verbosity=0, wrap=True, standardize=True, do_niggli_first=False)
+            # make fortran work and test:
+            supercell2, scale2 = make_supercell(structure, distance=radius, method='hnf', implementation='fort', verbosity=0, wrap=True, standardize=True, do_niggli_first=False)
+            for idim in range(3):
+                self.assertTrue(np.linalg.norm(supercell1._lattice.matrix[idim]) >= radius)
+                self.assertTrue(np.linalg.norm(supercell2._lattice.matrix[idim]) >= radius)
+            self.assertTrue(abs(supercell1._lattice.volume - supercell2._lattice.volume) < 1e-6)
 
 
-    #~ @unittest.skipIf(True,"")
     def test_hnf_dmpi(self):
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
@@ -66,13 +65,13 @@ class Test(unittest.TestCase):
                 for pos in itertools.product([-0.5,0.5], repeat=3):
                     sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
                 structure = Structure.from_sites(sites)
-                print "The primitive cell:"
-                for i in range(3):
-                    print structure._lattice.matrix[i]
+                #~ print "The primitive cell:"
+                #~ for i in range(3):
+                    #~ print structure._lattice.matrix[i]
 
                 for rad in range(RMIN, RMAX):
-                    supercell1, scale1 = make_supercell(structure, r_inner=rad, method='hnf', implementation=implementation,
-                            verbosity=2, wrap=True, standardize=False, do_niggli_first=False)
+                    supercell1, scale1 = make_supercell(structure, distance=rad, method='hnf', implementation=implementation,
+                            verbosity=0, wrap=True, standardize=False, do_niggli_first=False)
                     reduced_supercell1 = supercell1.get_reduced_structure(reduction_algo=u'LLL')
                     #~ print 'distances not red.:', np.linalg.norm(supercell1._lattice.matrix, axis=1)
                     #~ print 'angles not red.:', supercell1._lattice.angles
@@ -81,7 +80,6 @@ class Test(unittest.TestCase):
                     # I check if any dimension is lower then rad!
                     # if this is the case, we are wrong
                     for dim in range(3):
-                        print dim, np.linalg.norm(reduced_supercell1._lattice.matrix[dim])
                         self.assertTrue(np.linalg.norm(reduced_supercell1._lattice.matrix[dim]) >= rad)
 
 

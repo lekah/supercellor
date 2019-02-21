@@ -117,7 +117,7 @@ def standardize_cell(cell, wrap):
     cell = Structure.from_sites(new_sites)
     return cell
 
-def get_diagonal_solution_bec(cell, r_inner):
+def get_diagonal_solution_bec(cell, d_inner):
     # getting the vectors:
     a,b,c = [np.array(v) for v in cell]
     R_diag = np.zeros((3,3), dtype=int)
@@ -125,7 +125,7 @@ def get_diagonal_solution_bec(cell, r_inner):
     for index, (n1, n2, n3) in enumerate(((a,b,c), (b,c,a), (c,a,b))):
         d23 = np.cross(n2, n3) 
         d1 = np.linalg.norm(np.dot(n1, d23)) / np.linalg.norm(d23)
-        R_diag[index, index] = int(np.ceil(2*r_inner/d1)) # x2 to get diameter
+        R_diag[index, index] = int(np.ceil(d_inner/d1)) # x2 to get diameter
     return R_diag, np.dot(R_diag, cell)
 
 def get_diagonal_solution_hnf(cell, dmpi):
@@ -134,12 +134,13 @@ def get_diagonal_solution_hnf(cell, dmpi):
     R_diag = np.diag(map(int, np.ceil(dmpi / norms )))
     return R_diag, np.dot(R_diag, cell)
 
-def get_possible_solutions(cell, r_inner, verbosity=1):
+def get_possible_solutions(cell, d_inner, verbosity=1):
     """
     Returns all possible vectors (as integer crystal coordinates)
-    that lie outside a sphere of radius min_dist_soll, but within a sphere given by a
+    that lie outside a sphere of radius r_inner=0.5 d_inner, but within a sphere given by a
     maximum radius that is determined by the upper bound, the diagonal solution.
-    The trial vectors could be iteratively reduced with better solutions found, while still being exhaustive
+    The trial vectors could be iteratively reduced with better solutions found,
+    while still being exhaustive.
     """
     def apply_sym_ops(G, cell):
         """
@@ -148,12 +149,20 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
         """
         return G[G[:,2] >= 0, :]
 
-    R_diag, C_diag = get_diagonal_solution_bec(cell, r_inner)
 
+    # Important: I work with everything times 2 here, therefore transforming
+    # a radius to a diameter, and the 'half integer grid G' becomes an integer grid
+    # G. This is done for having the convenience of having largely integer math.
+
+    R_diag, C_diag = get_diagonal_solution_bec(cell, d_inner)
+
+    # calculating the volume of the diagonal solution:
     v_diag = np.abs(np.dot(np.cross(C_diag[0], C_diag[1]), C_diag[2]))
-    r_outer = v_diag / r_inner**2 / 8.0
 
-    S = np.matrix(np.diag([1,1,1,-r_outer**2]))
+    # r_outer is taken from the diagonal solution.
+    d_outer = v_diag / d_inner**2 #/ 8.0
+
+    S = np.matrix(np.diag([1,1,1,-d_outer**2]))
 
     cellT = cell.T
     cellI = np.matrix(cell).I
@@ -193,7 +202,9 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
     Gr_r1  = np.dot(Gc_r1, cell)
     # calculating the norm:
     norms_of_Gr_r1 = np.linalg.norm(Gr_r1, axis=1)
-    msk = (norms_of_Gr_r1 > ( r_inner -EPSILON) ) & (norms_of_Gr_r1 < (r_outer + EPSILON) ) 
+
+
+    msk = (norms_of_Gr_r1 > ( d_inner -EPSILON) ) & (norms_of_Gr_r1 < (d_outer + EPSILON) )
 
     Gr_r2 = Gr_r1[msk, :]
     Gc_r2 = Gc_r1[msk, :]
@@ -207,15 +218,116 @@ def get_possible_solutions(cell, r_inner, verbosity=1):
         print ('Gc_r02')
         for item, norm in zip(Gc_r2, norms_of_Gr_r2):
             print '  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm)
-        print r_inner, r_outer
-        print R_diag
+
     # Now I am sorting everything via the norm:
     sorted_argindex = norms_of_Gr_r2.argsort()
     sorted_Gr_r2 = Gr_r2[sorted_argindex, :]
     sorted_Gc_r2 = Gc_r2[sorted_argindex, :]
     norms_of_sorted_Gr_r2 = norms_of_Gr_r2[sorted_argindex]
+    return norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, d_outer, v_diag
 
-    return norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag
+
+def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag,
+        r_inner, verbosity=1):
+    """
+    Gettung the optimal solution for the best enclosing cell for a sphere of a given
+    radius.
+    """
+    min_volume = np.inf
+    max_min_inter_face_dist = 0
+    #max_radius = trial_vecs[-1][0]
+    indices = range(len(norms_of_sorted_Gr_r2))
+    R_best = np.zeros((3,3), dtype=int)
+    C_best = np.zeros((3,3), dtype=float)
+
+    for i1, norm1 in enumerate(norms_of_sorted_Gr_r2, start=0):
+        if norm1 > r_outer - EPSILON:
+            # At this point I have finished!
+            break
+        vector1 = sorted_Gr_r2[i1]
+        if verbosity > 1:
+            print '  Setting vector1', vector1
+        for i2, norm2 in enumerate(norms_of_sorted_Gr_r2[i1+1:], start=i1+1):
+            if norm2 > r_outer - EPSILON:
+                # I can stop iterating over the possible second vectors
+                break
+
+            # Checking the dot product, so that I continue if the vectors have an angle < 60
+            vector2 = sorted_Gr_r2[i2]
+            if verbosity > 1:
+                print '    Setting vector2', vector2
+            if np.abs(np.dot(vector1, vector2)) / (norm1*norm2) - EPSILON > 0.5:
+                if verbosity > 1:
+                    print '   -> Angle < 60, continue'
+                continue
+            for i3, norm3 in enumerate(norms_of_sorted_Gr_r2[i2+1:], start=i2+1):
+                if norm3 > r_outer - EPSILON:
+                    if verbosity > 1:
+                        print '     -> Max radius surpassed, break'
+                    break
+                vector3 = sorted_Gr_r2[i3]
+                if verbosity > 1:
+                    print '      Setting vector3', vector3
+
+                if np.abs(np.dot(vector2, vector3)) / (norm2*norm3) - EPSILON  > 0.5:
+                    if verbosity > 1:
+                        print '     -> Angle < 60, continue'
+                    continue
+                elif np.abs(np.dot(vector1, vector3)) / (norm1*norm3) - EPSILON > 0.5:
+                    if verbosity > 1:
+                        print '     -> Angle < 60, continue'
+                    continue
+                # checking intersections of each plane
+                cross23 = np.cross(vector2, vector3)
+                d1 = np.abs(np.dot(cross23/np.linalg.norm(cross23), vector1))
+                if d1 < r_inner:
+                    if verbosity > 1:
+                        print '     -> d1 {} < r_inner, continue'.format(d1)
+                    continue
+                cross13 = np.cross(vector1, vector3)
+                d2 = np.abs(np.dot(cross13/np.linalg.norm(cross13), vector2))
+                if d2 < r_inner:
+                    if verbosity > 1:
+                        print '     -> d2 {} < r_inner, continue'.format(d2)
+                    continue
+                cross12 = np.cross(vector1, vector2)
+                d3 = np.abs(np.dot(cross12/np.linalg.norm(cross12), vector3))
+                if d3 < r_inner:
+                    if verbosity > 1:
+                        print '     -> d3 {} < r_inner, continue'.format(d3)
+                    continue
+
+                volume = np.abs(
+                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 2]+
+                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 0]+
+                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 1]-
+                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 2]-
+                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 0]-
+                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 1])
+
+                min_inter_face_dist = min((d1,d2, d3))
+
+                if volume < min_volume or (
+                        volume == min_volume and
+                        min_inter_face_dist > max_min_inter_face_dist):
+                    min_volume = volume
+                    r_outer = min_volume/r_inner**2
+                    max_min_inter_face_dist = min_inter_face_dist
+
+                    if verbosity:
+                        print "New optimal supercell {} & {}".format(volume, max_min_inter_face_dist)
+                    R_best[0,:] = sorted_Gc_r2[i1]
+                    R_best[1,:] = sorted_Gc_r2[i2]
+                    R_best[2,:] = sorted_Gc_r2[i3]
+                    C_best[0,:] = vector1
+                    C_best[1,:] = vector2
+                    C_best[2,:] = vector3
+
+    if verbosity:
+        print('FINAL\n')
+        print(R_best)
+    return R_best, C_best
+
 
  
 def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
@@ -229,17 +341,23 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
     # calculating the maximal volume as number of unit cell
     # not using linalg, as it returns float
     V_max = np.prod(np.diag(R_diag)) # np.linalg.det(R_diag)
+    V_prim = v_diag / V_max
     hnf = np.zeros((3,3), dtype=int)
     best_dmpi = dmpi
     inv_prim_cell = np.linalg.inv(prim_cell)
     found = False
-    V_min = 1 # Is there a better way to estimate V_min?
+    # I assume that the minimal volume is a close packed structure,
+    # with angles of 60 degrees. This gives that the total volume
+    # can be a fourth of the cube:
+    # Is there a better way to estimate V_min?
+    V_min = int(0.25*dmpi**3/V_prim) or 1 # in case the first gives 0
     if verbosity > 0:
+        print "Prim volume is {}".format(V_prim)
         print "Testing HNF from {} to {}".format(V_min, V_max)
     # Important. Rows and colums are exchanged, so I have to build the upper
     # Hermite normal form!
     count = 0
-    for V_s in range(1, V_max+1):
+    for V_s in range(V_min, V_max+1):
         if verbosity >1:
             print "ENTERING VOLUME", V_s
         for a in range(1, V_max+1):
@@ -296,12 +414,12 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
 
 
 
-def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True,
-        do_niggli_first=True, implementation='fort', verbosity=1):
+def make_supercell(structure, distance, method='bec', wrap=True, standardize=True,
+        do_niggli_first=True, diagonal=False, implementation='fort', verbosity=1):
     """
     Creates from a given structure a supercell based on the required minimal dimension
     :param structure: The pymatgen structure to create the supercell for
-    :param float r_inner: The minimum image distance as a float,
+    :param float distance: The minimum image distance as a float,
         The cell created will not have any periodic image below this distance
     :param str method: The method to get the optimal supercell. For now, the only
         implemented option is *best enclosing cell*
@@ -314,8 +432,10 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
     :param bool do_niggli_first: Start with a niggli reduction of the cell,
         to enable a faster search. Disable if there are problems with the reduction
         of if the cell is already Niggli or LLL reduced.
-    :param str implementation: Either fortran or python-implementation, when
-        method is 'bec'
+    :param bool diagonal: Whether to return the diagonal solution, instead
+        of the optimal cell.
+    :param str implementation: Either fortran ('fort') or python-implementation ('pyth'),
+        defaults to 'fort'
     :param int verbosity: Sets the verbosity level.
 
     :returns: A new pymatgen core structure instance and the used scaling matrix
@@ -324,10 +444,10 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
     if not isinstance(structure, Structure):
         raise TypeError("Structure passed has to be a pymatgen structure")
     try:
-        r_inner = float(r_inner)
-        assert r_inner>1e-12, "Non-positive number"
+        distance = float(distance)
+        assert distance>1e-12, "Non-positive number"
     except Exception as e:
-        print "You have to pass positive float or integer as r_inner"
+        print "You have to pass positive float or integer as distance"
         raise e
 
     if not isinstance(wrap, bool):
@@ -352,34 +472,39 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
     lattice_cellvecs = np.array(starting_structure._lattice.matrix, dtype=np.float64)
     # trial_vecs are all possible vectors sorted by the norm
     if method == 'bec':
-        (norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
-            v_diag ) = get_possible_solutions(lattice_cellvecs, r_inner,
-                            verbosity=verbosity)
-        if verbosity:
-            print( "I received {} possible solutions".format(len(norms_of_sorted_Gr_r2)))
-        # I pass these trial vectors into the function to find the minimum volume:
-        if implementation == 'diag':
+        if diagonal:
             lattice_cellvecs = np.array(lattice_cellvecs)
-            scale_matrix, supercell_cellvecs = get_diagonal_solution_bec(lattice_cellvecs, r_inner)
-        elif implementation == 'pyth':
-            scale_matrix, supercell_cellvecs = get_optimal_solution_bec(
-                norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
-                v_diag, r_inner=r_inner, verbosity=verbosity)
-        elif implementation == 'fort':
-            scale_matrix, supercell_cellvecs = fort_optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
-                v_diag, r_inner, verbosity,len(norms_of_sorted_Gr_r2))
+            # I get the diagonal solutions
+            scale_matrix, supercell_cellvecs = get_diagonal_solution_bec(lattice_cellvecs, distance)
         else:
-            raise RuntimeError("Implementation {}".formt(implementation))
+            # I get all possible midpoint vectors, based on the distance,
+            # which for BEC method is the diameter of the sphere
+            (norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, 
+                v_diag ) = get_possible_solutions(lattice_cellvecs, distance,
+                                verbosity=verbosity)
+            if verbosity:
+                print( "I received {} possible solutions".format(len(norms_of_sorted_Gr_r2)))
+            # I pass these trial vectors into the function to find the minimum volume:
+            if implementation == 'pyth':
+                scale_matrix, supercell_cellvecs = get_optimal_solution_bec(
+                    norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer,
+                    v_diag, r_inner=distance, verbosity=verbosity)
+            elif implementation == 'fort':
+                scale_matrix, supercell_cellvecs = fort_optimal_supercell_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer,
+                    v_diag, distance, verbosity,len(norms_of_sorted_Gr_r2))
+            else:
+                raise RuntimeError("Implementation {}".formt(implementation))
     elif method == 'hnf':
-        if implementation == 'diag':
+        if diagonal:
             lattice_cellvecs = np.array(lattice_cellvecs)
-            scale_matrix, supercell_cellvecs = get_diagonal_solution_hnf(lattice_cellvecs, r_inner)
-        elif implementation == 'pyth':
-            scale_matrix, supercell_cellvecs = get_optimal_solution_hnf(lattice_cellvecs, r_inner, verbosity)
-        elif implementation == 'fort':
-            scale_matrix, supercell_cellvecs = fort_optimal_supercell_hnf(lattice_cellvecs, r_inner, verbosity)
+            scale_matrix, supercell_cellvecs = get_diagonal_solution_hnf(lattice_cellvecs, distance)
         else:
-            raise RuntimeError("Implementation {}".formt(implementation))
+            if implementation == 'pyth':
+                scale_matrix, supercell_cellvecs = get_optimal_solution_hnf(lattice_cellvecs, distance, verbosity)
+            elif implementation == 'fort':
+                scale_matrix, supercell_cellvecs = fort_optimal_supercell_hnf(lattice_cellvecs, distance, verbosity)
+            else:
+                raise RuntimeError("Implementation {}".formt(implementation))
     
         #raise NotImplementedError("HNF has not been fully implemented")
     else:
@@ -418,104 +543,4 @@ def make_supercell(structure, r_inner, method='bec', wrap=True, standardize=True
             for i, v in enumerate(new_lattice.matrix):
                 print (i, np.linalg.norm(v))
     return supercell, scale_matrix
-
-
-
-def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, r_outer, v_diag,
-        r_inner, verbosity=1):
-
-    min_volume = np.inf
-    max_min_inter_face_dist = 0
-    #max_radius = trial_vecs[-1][0]
-    indices = range(len(norms_of_sorted_Gr_r2))
-    R_best = np.zeros((3,3), dtype=int)
-    C_best = np.zeros((3,3), dtype=float)
-    
-    for i1, norm1 in enumerate(norms_of_sorted_Gr_r2, start=0):
-        if norm1 > r_outer - EPSILON:
-            # At this point I have finished!
-            break
-        vector1 = sorted_Gr_r2[i1]
-        if verbosity > 1:
-            print '  Setting vector1', vector1
-        for i2, norm2 in enumerate(norms_of_sorted_Gr_r2[i1+1:], start=i1+1):
-            if norm2 > r_outer - EPSILON:
-                # I can stop iterating over the possible second vectors
-                break
-
-            # Checking the dot product, so that I continue if the vectors have an angle < 60
-            vector2 = sorted_Gr_r2[i2]
-            if verbosity > 1:
-                print '    Setting vector2', vector2
-            if np.abs(np.dot(vector1, vector2)) / (norm1*norm2) >= 0.5:
-                if verbosity > 1:
-                    print '   -> Angle < 60, continue'
-                continue
-            for i3, norm3 in enumerate(norms_of_sorted_Gr_r2[i2+1:], start=i2+1):
-                if norm3 > r_outer - EPSILON:
-                    if verbosity > 1:
-                        print '     -> Max radius surpassed, break'
-                    break
-                vector3 = sorted_Gr_r2[i3]
-                if verbosity > 1:
-                    print '      Setting vector3', vector3
-
-                if np.abs(np.dot(vector2, vector3)) / (norm2*norm3) >= 0.5:
-                    if verbosity > 1:
-                        print '     -> Angle < 60, continue'
-                    continue
-                elif np.abs(np.dot(vector1, vector3)) / (norm1*norm3) >= 0.5:
-                    if verbosity > 1:
-                        print '     -> Angle < 60, continue'
-                    continue
-                # checking intersections of each plane
-                cross23 = np.cross(vector2, vector3)
-                d1 = np.abs(np.dot(cross23/np.linalg.norm(cross23), vector1))
-                if d1 < r_inner:
-                    if verbosity > 1:
-                        print '     -> d1 {} < r_inner, continue'.format(d1)
-                    continue
-                cross13 = np.cross(vector1, vector3)
-                d2 = np.abs(np.dot(cross13/np.linalg.norm(cross13), vector2))
-                if d2 < r_inner:
-                    if verbosity > 1:
-                        print '     -> d2 {} < r_inner, continue'.format(d2)
-                    continue
-                cross12 = np.cross(vector1, vector2)
-                d3 = np.abs(np.dot(cross12/np.linalg.norm(cross12), vector3))
-                if d3 < r_inner:
-                    if verbosity > 1:
-                        print '     -> d3 {} < r_inner, continue'.format(d3)
-                    continue
-
-                volume = np.abs(
-                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 2]+
-                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 0]+
-                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 1]-
-                        sorted_Gc_r2[i1, 1]*sorted_Gc_r2[i2, 0]*sorted_Gc_r2[i3, 2]-
-                        sorted_Gc_r2[i1, 2]*sorted_Gc_r2[i2, 1]*sorted_Gc_r2[i3, 0]-
-                        sorted_Gc_r2[i1, 0]*sorted_Gc_r2[i2, 2]*sorted_Gc_r2[i3, 1])
-
-                min_inter_face_dist = min((d1,d2, d3))
-
-                if volume < min_volume or (
-                        volume == min_volume and 
-                        min_inter_face_dist > max_min_inter_face_dist):
-                    min_volume = volume
-                    r_outer = min_volume/r_inner**2
-                    max_min_inter_face_dist = min_inter_face_dist
-
-                    if verbosity:
-                        print "New optimal supercell {} & {}".format(volume, max_min_inter_face_dist)
-                    R_best[0,:] = sorted_Gc_r2[i1]
-                    R_best[1,:] = sorted_Gc_r2[i2]
-                    R_best[2,:] = sorted_Gc_r2[i3]
-                    C_best[0,:] = vector1
-                    C_best[1,:] = vector2
-                    C_best[2,:] = vector3
-
-    if verbosity:
-        print('FINAL\n')
-        print(R_best)
-    return R_best, C_best
 
