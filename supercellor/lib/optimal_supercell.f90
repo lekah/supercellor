@@ -430,9 +430,11 @@ iter: DO
  cell_volume = determinant33(prim_latt_vecs)
  
  ! The minimal value for the supercell size is set by requiring that the volume
- ! of the supercell is at least equal to a fourth of the cube
- ! equivalent to close-packed structure.
- min_super_size = int(0.25D0 * radius**3 / cell_volume)
+ ! of the supercell is at least equal to the optimal close-packed structure.
+ min_super_size = int( radius**3 / sqrt(2.0D0) / cell_volume - tol)
+
+ if (min_super_size .eq. 0 ) min_super_size = 1
+
  max_super_size = diag_vol(prim_latt_vecs, radius)
  IF ( verbosity > 0 ) THEN
     write(*,*) "Unit cell volume: ", cell_volume
@@ -444,7 +446,6 @@ iter: DO
     enddo
  ENDIF
 
- ! Initialize to zero the best_min_image_distance to required one
  found = .false.
  best_min_image_distance = radius
  counter = 0
@@ -455,7 +456,6 @@ iter: DO
     s22_loop: do s22=1,quotient
      if(.not.mod(quotient,s22)==0) cycle
      s33=quotient/s22
-     ! IF (s33>1) CYCLE ! uncomment this line for 2D
      s12_loop: do s12=0,s22-1
       s13_loop: do s13=0,s33-1
        s23_loop: do s23=0,s33-1
@@ -561,7 +561,6 @@ iter: DO
  if (verbosity > 0 ) THEN
     write(*,*) "Best minimum image distance: ", abs_best_min_image_distance
     write(*,*) "Optimal supercell: "
-
      do i = 1, 3
         write(*,*) scaling_matrix(i,1:3)
      end do

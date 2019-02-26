@@ -346,11 +346,11 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
     best_dmpi = dmpi
     inv_prim_cell = np.linalg.inv(prim_cell)
     found = False
-    # I assume that the minimal volume is a close packed structure,
-    # with angles of 60 degrees. This gives that the total volume
-    # can be a fourth of the cube:
+    # I assume that the minimal volume is a close packed fcc structure,
+    # with angles of 60 degrees. This gives that the total volume as a function
+    # of the cube volume
     # Is there a better way to estimate V_min?
-    V_min = int(0.25*dmpi**3/V_prim) or 1 # in case the first gives 0
+    V_min = int(dmpi**3 / np.sqrt(2) /V_prim) or 1 # in case the first gives 0
     if verbosity > 0:
         print "Prim volume is {}".format(V_prim)
         print "Testing HNF from {} to {}".format(V_min, V_max)
