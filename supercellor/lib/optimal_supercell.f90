@@ -540,6 +540,7 @@ iter: DO
             end do
             if (abs_norm < best_abs_norm) then
                 scaling_matrix(1:3,1:3) = hnf(1:3,1:3)
+                supercell_latt_vecs(1:3,1:3) = temp_latt_vecs(1:3,1:3)
                 best_abs_norm = abs_norm
             end if
         end if

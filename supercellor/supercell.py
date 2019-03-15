@@ -198,7 +198,9 @@ def get_possible_solutions(cell, d_inner, verbosity=1):
     # I reduced the grid further by apply symmetry operations to the grid.
     # I do this before calculating any distances, since distances are expensive
     Gc_r1 = apply_sym_ops(Gc_r0, cell)
-    # getting the gridpoints in real space, no longer the grid
+    # getting the gridpoints in real space.
+    # The dot product of Gc_r0 and cell gives the matrix of npoints x 3,
+    # where every point is a coordinate.
     Gr_r1  = np.dot(Gc_r1, cell)
     # calculating the norm:
     norms_of_Gr_r1 = np.linalg.norm(Gr_r1, axis=1)
@@ -209,7 +211,6 @@ def get_possible_solutions(cell, d_inner, verbosity=1):
     Gr_r2 = Gr_r1[msk, :]
     Gc_r2 = Gc_r1[msk, :]
     norms_of_Gr_r2 = norms_of_Gr_r1[msk]
-
 
     if verbosity > 1:
         print ('Gc_r01')
@@ -384,7 +385,9 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
                             reduced = Lattice(C).get_lll_reduced_lattice(delta=0.75)
                             C_red = reduced.matrix
                             shortest_dist = np.linalg.norm(reduced.matrix, axis=1).min()
+                            
                             R = np.rint(np.dot(C_red, inv_prim_cell)).astype(int)
+                            assert np.sum((np.dot(R, prim_cell)-C_red)**2) < 1e-12, "cannot do inversion properly"
                             #~ if verbosity > 1 and count==114:
                             if verbosity > 1:
                                 print '--------------------------'
@@ -396,16 +399,16 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
                                     print val
                             if shortest_dist > best_dmpi:
                                 best_abs_norm = np.sum(np.abs(hnf))
-                                R_best = R
-                                C_best = C
+                                R_best = R.copy()
+                                C_best = C_red.copy()
                                 # Setting found for true, which means I will not
                                 # go to the next volume
                                 found = True
                             elif abs(shortest_dist-best_dmpi) < EPSILON:
                                 abs_norm = np.sum(np.abs(hnf))
                                 if abs_norm < best_abs_norm:
-                                    R_best = R
-                                    C_best = C
+                                    R_best = R.copy()
+                                    C_best = C_red.copy()
                                     best_abs_norm = abs_norm
                                     found = True
         if found:
