@@ -29,7 +29,7 @@ class Test(unittest.TestCase):
                 P = np.eye(3)+ 0.1*(np.random.random((3,3)) -0.5)
                 lattice = Lattice(P)
                 if lattice.volume < 0.1:
-                    print 'skipping', lattice.volume
+                    print('skipping', lattice.volume)
                     continue
                 sites = []
                 try:

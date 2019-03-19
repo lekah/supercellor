@@ -1,8 +1,7 @@
 import unittest
 
 class Test(unittest.TestCase):
-
-    @unittest.skipIf(True,"")
+    # @unittest.skipIf(True,"")
     def test_niggli(self):
         from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
         from pymatgen.core.structure import Structure
@@ -40,7 +39,7 @@ class Test(unittest.TestCase):
                         supercell1._lattice.matrix[i,j],
                         supercell_refine._lattice.matrix[i,j],i,j))
 
-    @unittest.skipIf(True,"")
+
     def test_structures(self):
         import itertools
         import numpy as np
@@ -55,11 +54,11 @@ class Test(unittest.TestCase):
         RADIUS = 100.0
         EPS = 1e-3
         DIAG = 4
-        NOISE_R = 3
+        NOISE_R = 2
         tests_run = 0
         np.random.seed(10)
         while (tests_run < NTESTS):
-            R = DIAG*np.eye(3, dtype=int) - np.random.randint(NOISE_R, size=(3,3)) + NOISE_R/2
+            R = DIAG*np.eye(3, dtype=int) - np.random.randint(NOISE_R, size=(3,3)) + NOISE_R
             #np.random.randint(10, size=(3,3)) -5 
             S = RADIUS* np.eye(3)
             try:
@@ -68,7 +67,7 @@ class Test(unittest.TestCase):
                 continue
             lattice = Lattice(P)
             if lattice.volume < 0.01*RADIUS**3/DIAG:
-                print 'skipping', lattice.volume
+                print ('skipping', lattice.volume)
                 continue
             sites = []
             try:
@@ -77,12 +76,12 @@ class Test(unittest.TestCase):
             except np.linalg.LinAlgError:
                 continue
             structure = Structure.from_sites(sites)
+            
             supercell, scale = make_supercell(structure, distance=RADIUS-EPS,
                     verbosity=0, wrap=True, standardize=True, do_niggli_first=True)
             self.assertTrue(np.sum(np.abs(supercell._lattice.matrix - S))< EPS)
             tests_run += 1
 
-    # ~ @unittest.skipIf(True,"")
     def test_supercells(self):
         from pymatgen.io.cif import CifParser
         import numpy as np

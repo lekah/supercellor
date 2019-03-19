@@ -131,7 +131,7 @@ def get_diagonal_solution_bec(cell, d_inner):
 def get_diagonal_solution_hnf(cell, dmpi):
     a,b,c = [np.array(v) for v in cell]
     norms = np.linalg.norm(cell, axis=1)
-    R_diag = np.diag(map(int, np.ceil(dmpi / norms )))
+    R_diag = np.diag(list(map(int, np.ceil(dmpi / norms ))))
     return R_diag, np.dot(R_diag, cell)
 
 def get_possible_solutions(cell, d_inner, verbosity=1):
@@ -194,7 +194,7 @@ def get_possible_solutions(cell, d_inner, verbosity=1):
     if verbosity > 1:
         print ('Gc_r0')
         for item in Gc_r0:
-            print '  {:>3} {:>3} {:>3}'.format(*item)
+            print ('  {:>3} {:>3} {:>3}'.format(*item))
     # I reduced the grid further by apply symmetry operations to the grid.
     # I do this before calculating any distances, since distances are expensive
     Gc_r1 = apply_sym_ops(Gc_r0, cell)
@@ -215,10 +215,10 @@ def get_possible_solutions(cell, d_inner, verbosity=1):
     if verbosity > 1:
         print ('Gc_r01')
         for item, norm in zip(Gc_r1, norms_of_Gr_r1):
-            print '  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm)
+            print ('  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm))
         print ('Gc_r02')
         for item, norm in zip(Gc_r2, norms_of_Gr_r2):
-            print '  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm)
+            print ('  {:>3} {:>3} {:>3} {norm}'.format(*item, norm=norm))
 
     # Now I am sorting everything via the norm:
     sorted_argindex = norms_of_Gr_r2.argsort()
@@ -247,7 +247,7 @@ def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, 
             break
         vector1 = sorted_Gr_r2[i1]
         if verbosity > 1:
-            print '  Setting vector1', vector1
+            print ('  Setting vector1', vector1)
         for i2, norm2 in enumerate(norms_of_sorted_Gr_r2[i1+1:], start=i1+1):
             if norm2 > r_outer - EPSILON:
                 # I can stop iterating over the possible second vectors
@@ -256,46 +256,46 @@ def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, 
             # Checking the dot product, so that I continue if the vectors have an angle < 60
             vector2 = sorted_Gr_r2[i2]
             if verbosity > 1:
-                print '    Setting vector2', vector2
+                print ('    Setting vector2', vector2)
             if np.abs(np.dot(vector1, vector2)) / (norm1*norm2) - EPSILON > 0.5:
                 if verbosity > 1:
-                    print '   -> Angle < 60, continue'
+                    print ('   -> Angle < 60, continue')
                 continue
             for i3, norm3 in enumerate(norms_of_sorted_Gr_r2[i2+1:], start=i2+1):
                 if norm3 > r_outer - EPSILON:
                     if verbosity > 1:
-                        print '     -> Max radius surpassed, break'
+                        print ('     -> Max radius surpassed, break')
                     break
                 vector3 = sorted_Gr_r2[i3]
                 if verbosity > 1:
-                    print '      Setting vector3', vector3
+                    print ('      Setting vector3', vector3)
 
                 if np.abs(np.dot(vector2, vector3)) / (norm2*norm3) - EPSILON  > 0.5:
                     if verbosity > 1:
-                        print '     -> Angle < 60, continue'
+                        print ('     -> Angle < 60, continue')
                     continue
                 elif np.abs(np.dot(vector1, vector3)) / (norm1*norm3) - EPSILON > 0.5:
                     if verbosity > 1:
-                        print '     -> Angle < 60, continue'
+                        print ('     -> Angle < 60, continue')
                     continue
                 # checking intersections of each plane
                 cross23 = np.cross(vector2, vector3)
                 d1 = np.abs(np.dot(cross23/np.linalg.norm(cross23), vector1))
                 if d1 < r_inner:
                     if verbosity > 1:
-                        print '     -> d1 {} < r_inner, continue'.format(d1)
+                        print ('     -> d1 {} < r_inner, continue'.format(d1))
                     continue
                 cross13 = np.cross(vector1, vector3)
                 d2 = np.abs(np.dot(cross13/np.linalg.norm(cross13), vector2))
                 if d2 < r_inner:
                     if verbosity > 1:
-                        print '     -> d2 {} < r_inner, continue'.format(d2)
+                        print('     -> d2 {} < r_inner, continue'.format(d2))
                     continue
                 cross12 = np.cross(vector1, vector2)
                 d3 = np.abs(np.dot(cross12/np.linalg.norm(cross12), vector3))
                 if d3 < r_inner:
                     if verbosity > 1:
-                        print '     -> d3 {} < r_inner, continue'.format(d3)
+                        print ('     -> d3 {} < r_inner, continue'.format(d3))
                     continue
 
                 volume = np.abs(
@@ -316,7 +316,7 @@ def get_optimal_solution_bec(norms_of_sorted_Gr_r2, sorted_Gc_r2, sorted_Gr_r2, 
                     max_min_inter_face_dist = min_inter_face_dist
 
                     if verbosity:
-                        print "New optimal supercell {} & {}".format(volume, max_min_inter_face_dist)
+                        print("New optimal supercell {} & {}".format(volume, max_min_inter_face_dist))
                     R_best[0,:] = sorted_Gc_r2[i1]
                     R_best[1,:] = sorted_Gc_r2[i2]
                     R_best[2,:] = sorted_Gc_r2[i3]
@@ -353,25 +353,25 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
     # Is there a better way to estimate V_min?
     V_min = int(dmpi**3 / np.sqrt(2) /V_prim) or 1 # in case the first gives 0
     if verbosity > 0:
-        print "Prim volume is {}".format(V_prim)
-        print "Testing HNF from {} to {}".format(V_min, V_max)
+        print("Prim volume is {}".format(V_prim))
+        print("Testing HNF from {} to {}".format(V_min, V_max))
     # Important. Rows and colums are exchanged, so I have to build the upper
     # Hermite normal form!
     count = 0
     for V_s in range(V_min, V_max+1):
         if verbosity >1:
-            print "ENTERING VOLUME", V_s
+            print("ENTERING VOLUME", V_s)
         for a in range(1, V_max+1):
             if V_s % a:
                 # If there is a modulo, I need to continue
                 continue
             # this remains an integer, division integer by integer:
-            quotient = V_s / a
+            quotient = int(V_s / a)
             hnf[0,0] = a
             for c in range(1, quotient+1):
                 if quotient % c:
                     continue
-                f = quotient/c
+                f = int(quotient/c)
                 hnf[1,1] = c
                 hnf[2,2] = f
                 for b in range(0, c):
@@ -390,13 +390,12 @@ def get_optimal_solution_hnf(prim_cell, dmpi, verbosity=0):
                             assert np.sum((np.dot(R, prim_cell)-C_red)**2) < 1e-12, "cannot do inversion properly"
                             #~ if verbosity > 1 and count==114:
                             if verbosity > 1:
-                                print '--------------------------'
-                                print count
+                                print( '--------------------------')
                                 for key, val in (('HNF', hnf), ('C', C),
                                         ('R', R), ('Reduced', C_red),
                                         ('shortest', shortest_dist)):
-                                    print '{}:'.format(key)
-                                    print val
+                                    print ('{}:'.format(key))
+                                    print (val)
                             if shortest_dist > best_dmpi:
                                 best_abs_norm = np.sum(np.abs(hnf))
                                 R_best = R.copy()
@@ -450,7 +449,7 @@ def make_supercell(structure, distance, method='bec', wrap=True, standardize=Tru
         distance = float(distance)
         assert distance>1e-12, "Non-positive number"
     except Exception as e:
-        print "You have to pass positive float or integer as distance"
+        print ("You have to pass positive float or integer as distance")
         raise e
 
     if not isinstance(wrap, bool):
@@ -522,7 +521,7 @@ def make_supercell(structure, distance, method='bec', wrap=True, standardize=Tru
 
     if verbosity > 1:
         print("Given Scaling:\n")
-        print scale_matrix
+        print(scale_matrix)
         print("Given lattice:\n")
         print (new_lattice)
         for i, v in enumerate(new_lattice.matrix):
