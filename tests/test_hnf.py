@@ -56,7 +56,7 @@ class Test(unittest.TestCase):
         N = 1
         RMIN = 2
         RMAX = 3
-        print '\n'
+
         for trial in range(N):
             #~ for implementation in ('pyth', ):
             for implementation in ('fort', ):
@@ -65,9 +65,6 @@ class Test(unittest.TestCase):
                 for pos in itertools.product([-0.5,0.5], repeat=3):
                     sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
                 structure = Structure.from_sites(sites)
-                #~ print "The primitive cell:"
-                #~ for i in range(3):
-                    #~ print structure._lattice.matrix[i]
 
                 for rad in range(RMIN, RMAX):
                     supercell1, scale1 = make_supercell(structure, distance=rad, method='hnf', implementation=implementation,
