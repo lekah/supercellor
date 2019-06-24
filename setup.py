@@ -6,10 +6,6 @@ ext = Extension(
         name = 'supercellor.lib.optimal_supercell',
         sources = ['supercellor/lib/optimal_supercell.f90'],
     )
-#~ ext2 = Extension(
-        #~ name = 'samos.lib.mdutils',
-        #~ sources = ['samos/lib/mdutils.f90'],
-    #~ )
 
 if __name__ == '__main__':
     with open('setup.json', 'r') as info:
