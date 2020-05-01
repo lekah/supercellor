@@ -2,14 +2,14 @@ import unittest
 
 class Test(unittest.TestCase):
 
-    #~ @unittest.skipIf(True,"")
     def test_methods_compatibility(self):
+        import json, numpy as np, itertools, os
+
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
         from pymatgen.core.sites import PeriodicSite
         from supercellor.supercell import make_supercell
-        #from supercellor.lib.optimal_supercell import utils
-        import json, numpy as np, itertools, os
+
         create_new = False
         if create_new:
             lattice = Lattice( 1.1*np.eye(3) + (np.random.random((3,3))-0.5))
@@ -46,12 +46,12 @@ class Test(unittest.TestCase):
 
 
     def test_hnf_dmpi(self):
+        import json, numpy as np, itertools, os
+
         from pymatgen.core.structure import Structure
         from pymatgen.core.lattice import Lattice
         from pymatgen.core.sites import PeriodicSite
         from supercellor.supercell import make_supercell
-        #from supercellor.lib.optimal_supercell import utils
-        import json, numpy as np, itertools, os
         np.random.seed(50)
         N = 1
         RMIN = 2
@@ -70,12 +70,6 @@ class Test(unittest.TestCase):
                     supercell1, scale1 = make_supercell(structure, distance=rad, method='hnf', implementation=implementation,
                             verbosity=0, wrap=True, standardize=False, do_niggli_first=False)
                     reduced_supercell1 = supercell1.get_reduced_structure(reduction_algo=u'LLL')
-                    #~ print 'distances not red.:', np.linalg.norm(supercell1._lattice.matrix, axis=1)
-                    #~ print 'angles not red.:', supercell1._lattice.angles
-                    #~ print 'distances reduced :', np.linalg.norm(reduced_supercell1._lattice.matrix, axis=1)
-                    #~ print 'angles reduced:', reduced_supercell1._lattice.angles
-                    # I check if any dimension is lower then rad!
-                    # if this is the case, we are wrong
                     for dim in range(3):
                         self.assertTrue(np.linalg.norm(reduced_supercell1._lattice.matrix[dim]) >= rad)
 

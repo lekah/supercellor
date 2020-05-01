@@ -1,19 +1,13 @@
-
-import numpy as np
-
 import math
+import numpy as np
 from pymatgen.core.structure import Structure
 from pymatgen.core.lattice import Lattice
-
+from pymatgen.core.sites import  PeriodicSite
 try:
     from pymatgen.util.coord import lattice_points_in_supercell
 except ImportError:
     from pymatgen.util.coord_utils import lattice_points_in_supercell
 
-from pymatgen.core.sites import Site, PeriodicSite
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-
-from spglib import standardize_cell
 
 from supercellor.lib.optimal_supercell import (
     utils, fort_optimal_supercell_hnf, fort_optimal_supercell_bec)

@@ -14,9 +14,6 @@ class Test(unittest.TestCase):
 
         from supercellor.supercell import make_supercell
 
-
-
-        # tests per radius
         NTESTS = 10 #100
         VERBOSITY = 0
         for radius in np.arange(1.0, 3.1, 1.0):
