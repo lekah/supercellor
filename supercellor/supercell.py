@@ -31,8 +31,15 @@ def get_angles(cell_matrix):
 
 def standardize_cell(structure, wrap=True):
     """
+    Standardizes a structure. If a,b,c are the cell vector, the standard structure returned
+    will have the property that norm(a) <= norm(b) <= norm(c).
+    Also, the cell matrix will be triangular.
+
     :param structure: A pymatgen structure instance
     :param bool wrap: Whether to wrap the positions into the cell after standardizing, defaults to True.
+
+
+    :returns: A standardized cell    
     """
     frac_coords = np.empty((len(structure.sites), 3))
     cellvecs = structure._lattice.matrix
@@ -64,10 +71,10 @@ def standardize_cell(structure, wrap=True):
     else:
         raise RuntimeError("Unrecognized case for k_a={}, k_b={}, k_c={}".format(k_a,k_b, k_c))
     cellvecs, frac_coords = rotate(M2, cellvecs, frac_coords)
-    # Now applying the rules layed out in  http://arxiv.org/abs/1506.01455
-    # to get the standardized triclinic cell.
+    # Now applying the rules layed out in  http://arxiv.org/abs/1506.01455 (see Sec. 5.1)
+    # to get the standardized conventional triclinic cell.
     # Since not all cells give to me are triclinic < -> <= with respect to
-    # the paper. So it's not truly standardized!
+    # the paper, it's not standardized based on definition of that paper.
     metric = np.dot(cellvecs, cellvecs.T)
 
     a = np.sqrt(metric[0, 0])
@@ -91,17 +98,16 @@ def standardize_cell(structure, wrap=True):
     cellvecs[2, 2] = c * np.sqrt(1 - ca * ca - cb * cb - cg * cg + 2 * ca * cb * cg) / sg
     
     # And some checks:
-    if (
-        cellvecs[0,0] < -1e-12 or
-        abs(cellvecs[0,1]) > 1e-12 or
-        abs(cellvecs[0,2]) > 1e-12):
+    if (cellvecs[0,0] < -EPSILON or abs(cellvecs[0,1]) > EPSILON or abs(cellvecs[0,2]) > EPSILON):
         raise ValueError("First lattice vector not aligned with x-axis")
-    if  (
-        cellvecs[1,1] < -1e-12 or
-        abs(cellvecs[1,2]) > 1e-12):
+    if  (cellvecs[1,1] < -EPSILON or abs(cellvecs[1,2]) > EPSILON):
         raise ValueError("Second lattice vector not in X-Y plane in first quadrant")
     if  (cellvecs[2,2] < 0):
         raise ValueError("Third lattice vector not in positive Z-direction")
+    if np.linalg.norm(cellvecs[0]) - np.linalg.norm(cellvecs[1]) > EPSILON:
+        raise ValueError("Second lattice vector is smaller than first one")
+    if np.linalg.norm(cellvecs[1]) - np.linalg.norm(cellvecs[2]) > EPSILON:
+        raise ValueError("Third lattice vector is smaller than second one")
     
     new_sites = []
     new_lattice = Lattice(cellvecs)
