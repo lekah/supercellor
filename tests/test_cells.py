@@ -1,7 +1,6 @@
 import unittest
 
 class Test(unittest.TestCase):
-    # @unittest.skipIf(True,"")
     def test_niggli(self):
         from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
         from pymatgen.core.structure import Structure
@@ -38,6 +37,39 @@ class Test(unittest.TestCase):
                     '{} != {} for i,j={},{}'.format(
                         supercell1._lattice.matrix[i,j],
                         supercell_refine._lattice.matrix[i,j],i,j))
+
+
+
+class Test(unittest.TestCase):
+    def test_standardization(self):
+        import numpy as np
+        from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+        from pymatgen.core.structure import Structure
+        from pymatgen.core.lattice import Lattice
+        from pymatgen.core.sites import PeriodicSite
+        from supercellor.supercell import standardize_cell
+        import itertools
+
+        np.random.seed(10)
+        for i in range(20):
+            lattice = Lattice( 1*np.eye(3) + 0.5*(np.random.random((3,3))-0.5))
+            sites = []
+            for pos in itertools.product([-0.5,0.5], repeat=3):
+                sites.append(PeriodicSite("H", pos, lattice, coords_are_cartesian=True))
+            structure = Structure.from_sites(sites)
+            sga = SpacegroupAnalyzer(structure)
+            standardized_pymatgen = sga.get_primitive_standard_structure()
+
+
+            standardized_supercellor = standardize_cell(structure, False)
+            sga2 = SpacegroupAnalyzer(standardized_supercellor)
+            standardized_pymatgen2 = sga.get_primitive_standard_structure()
+            # Checking if I get to the same lattice when standardizing the structure standardize
+            # by the supercellor. Note: standardized_pymatgen != standardized_supercellor
+            # because they do not use the same algorithm
+            self.assertTrue(((standardized_pymatgen._lattice.matrix - standardized_pymatgen2._lattice.matrix)**2).sum() < 1e-6)
+            self.assertTrue(standardized_pymatgen2 == standardized_pymatgen)
+
 
 
     def test_structures(self):

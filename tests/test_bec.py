@@ -2,7 +2,6 @@ import unittest
 
 class Test(unittest.TestCase):
 
-    #~ @unittest.skipIf(True,"")
     def test_equivalence_fort_py(self):
         from datetime import datetime
         import itertools

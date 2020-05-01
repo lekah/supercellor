@@ -29,10 +29,14 @@ def get_angles(cell_matrix):
     return k_a, k_b, k_c
 
 
-def standardize_cell(cell, wrap):
-    frac_coords = np.empty((len(cell), 3))
-    cellvecs = cell._lattice.matrix
-    for i, site in enumerate(cell):
+def standardize_cell(structure, wrap=True):
+    """
+    :param structure: A pymatgen structure instance
+    :param bool wrap: Whether to wrap the positions into the cell after standardizing, defaults to True.
+    """
+    frac_coords = np.empty((len(structure.sites), 3))
+    cellvecs = structure._lattice.matrix
+    for i, site in enumerate(structure.sites):
         frac_coords[i,:] = site.frac_coords
 
     # The code below sorts the cell and positions by lattice vector length,
@@ -102,14 +106,14 @@ def standardize_cell(cell, wrap):
     new_sites = []
     new_lattice = Lattice(cellvecs)
 
-    for i, site in enumerate(cell):
+    for i, site in enumerate(structure.sites):
         s = PeriodicSite(site.species_and_occu, frac_coords[i],
                         new_lattice, properties=site.properties,
                         coords_are_cartesian=False, to_unit_cell=wrap)
         new_sites.append(s)
     
-    cell = Structure.from_sites(new_sites)
-    return cell
+    standardized_structure = Structure.from_sites(new_sites)
+    return standardized_structure
 
 def get_diagonal_solution_bec(cell, d_inner):
     # getting the vectors:
