@@ -113,7 +113,7 @@ def standardize_cell(structure, wrap=True):
     new_lattice = Lattice(cellvecs)
 
     for i, site in enumerate(structure.sites):
-        s = PeriodicSite(site.species_and_occu, frac_coords[i],
+        s = PeriodicSite(site.species, frac_coords[i],
                         new_lattice, properties=site.properties,
                         coords_are_cartesian=False, to_unit_cell=wrap)
         new_sites.append(s)
@@ -536,7 +536,7 @@ def make_supercell(structure, distance, method='bec', wrap=True, standardize=Tru
         print("Done, constructing structure")
     for site in starting_structure:
         for v in c_lat:
-            new_sites.append(PeriodicSite(site.species_and_occu, site.coords +v,
+            new_sites.append(PeriodicSite(site.species, site.coords +v,
                              new_lattice, properties=site.properties,
                              coords_are_cartesian=True, to_unit_cell=wrap))
 
